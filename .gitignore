@@ -1,0 +1,47 @@
+# Rust
+/target/
+# NOTE: Cargo.lock IS committed for binary applications (reproducible builds)
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+
+# Skoutt runtime data (contains sensitive info and binary files)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/logs/*.log
+data/logs/*.json
+# Keep .gitkeep files so directory structure is preserved
+!data/.gitkeep
+!data/logs/.gitkeep
+
+# Environment files (contain API keys and passwords)
+.env
+
+# Config (contains API keys and passwords)
+config/config.toml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Maturin build artifacts
+*.pyd
+*.dylib

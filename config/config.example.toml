@@ -1,0 +1,110 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Skoutt Configuration
+# Copy this file to config/config.toml and fill in your credentials.
+# NEVER commit config.toml to git — it contains secrets.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[company]
+name = "Track Exhibits Pvt LTD"
+website = "https://trackexhibits.com"
+services = "Exhibition booth fabrication with 3D design visualization and delivery"
+tagline = "From concept to on-site setup — we handle everything"
+regions_served = ["Middle East", "Europe", "Asia Pacific", "UK"]
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SMTP (Outgoing Email)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[email]
+smtp_host = "smtp.gmail.com"
+smtp_port = 587
+smtp_user = "scout@trackexhibits.com"
+smtp_password = "REPLACE_WITH_APP_PASSWORD"
+from_name = "Track Exhibits"
+from_email = "scout@trackexhibits.com"
+
+# Hard limits to avoid spam flags
+daily_limit = 60
+min_send_interval_seconds = 60
+max_per_hour_per_domain = 10
+max_bounce_rate_percent = 5
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# IMAP (Incoming Email / Reply Monitoring)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[imap]
+host = "imap.gmail.com"
+port = 993
+username = "scout@trackexhibits.com"
+password = "REPLACE_WITH_APP_PASSWORD"
+mailbox = "INBOX"
+poll_interval_seconds = 3600  # Check every hour
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# API Keys
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[apis]
+claude_api_key = "sk-ant-REPLACE_WITH_YOUR_KEY"
+claude_model = "claude-opus-4-5"
+apollo_api_key = "REPLACE_WITH_APOLLO_KEY"
+hunter_api_key = "REPLACE_WITH_HUNTER_KEY"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Targeting
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[targeting]
+regions = ["Middle East", "Europe", "Asia Pacific", "UK"]
+sectors = ["Tech", "Medical", "Pharma", "Auto"]
+
+# Decision maker titles to target (in priority order)
+target_titles = [
+    "Marketing Director",
+    "Events Manager",
+    "Trade Show Manager",
+    "Brand Manager",
+    "Head of Marketing",
+    "VP Marketing",
+    "CEO",
+    "Managing Director",
+]
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Survival / Death Rule
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[survival]
+grace_period_weeks = 2          # No death rule enforcement during this period
+min_interested_per_week = 1     # Must generate at least this many interested replies/week
+warning_threshold = 2           # Consecutive zero-interest weeks before WARNING
+shutdown_threshold = 3          # Consecutive zero-interest weeks before SHUTDOWN
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Alerts
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[alerts]
+user_email = "REPLACE_WITH_YOUR_EMAIL"
+alert_on_interested = true
+alert_on_warning = true
+alert_on_shutdown = true
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Scraping
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[scraping]
+request_delay_ms = 1000         # 1 second between requests (respectful)
+max_retries = 3
+user_agent = "Mozilla/5.0 (compatible; SkouTT/1.0; +https://trackexhibits.com/bot)"
+respect_robots_txt = true
+cache_responses = true
+cache_ttl_hours = 24
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Database
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[database]
+path = "data/Skoutt.db"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Logging
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[logging]
+level = "info"                  # trace, debug, info, warn, error
+log_dir = "data/logs"

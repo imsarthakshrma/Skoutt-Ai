@@ -1,0 +1,93 @@
+[package]
+name = "skoutt"
+version = "0.1.0"
+edition = "2021"
+description = "Survival-driven lead generation agent for Track Exhibits Pvt LTD"
+authors = ["Track Exhibits <scout@trackexhibits.com>"]
+
+[[bin]]
+name = "skoutt"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+futures = "0.3"
+
+# HTTP client for scraping
+reqwest = { version = "0.11", features = ["json", "cookies", "rustls-tls"], default-features = false }
+
+# Web scraping
+scraper = "0.18"
+
+# Email sending
+lettre = { version = "0.11", features = ["tokio1-rustls-tls", "smtp-transport", "builder"], default-features = false }
+
+# Email parsing (for reply monitoring)
+mail-parser = "0.9"
+
+# IMAP for checking replies (TLS via tokio-rustls, no OpenSSL needed)
+async-imap = { version = "0.11", features = ["runtime-tokio"], default-features = false }
+tokio-rustls = "0.25"
+rustls-native-certs = "0.7"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "chrono", "uuid"] }
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Python integration
+pyo3 = { version = "0.20", features = ["auto-initialize"] }
+
+# Rate limiting
+governor = "0.6"
+nonzero_ext = "0.3"
+
+# Configuration
+config = "0.13"
+toml = "0.8"
+
+# CLI argument parsing
+clap = { version = "4.5", features = ["derive", "env", "color"] }
+
+# .env file support
+dotenvy = "0.15"
+
+# UUID
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# HTML email templates
+handlebars = "5.0"
+
+# Async trait support
+async-trait = "0.1"
+
+# URL parsing
+url = "2.5"
+
+# Regex
+regex = "1.10"
+
+# Base64 (for email encoding)
+base64 = "0.21"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
