@@ -32,6 +32,65 @@ pub struct AppConfig {
     pub scraping: ScrapingConfig,
     pub database: DatabaseConfig,
     pub logging: LoggingConfig,
+    #[serde(default)]
+    pub research: ResearchConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResearchConfig {
+    /// Master switch — set false to skip deep research entirely
+    pub enabled: bool,
+    /// Contacts below this score are skipped (no email drafted)
+    pub quality_threshold: f64,
+    /// How many days to cache research before re-running
+    pub cache_duration_days: i64,
+    pub sources: ResearchSourcesConfig,
+    pub limits: ResearchLimitsConfig,
+}
+
+impl Default for ResearchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            quality_threshold: 0.5,
+            cache_duration_days: 30,
+            sources: ResearchSourcesConfig::default(),
+            limits: ResearchLimitsConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ResearchSourcesConfig {
+    /// SerpAPI key (https://serpapi.com) — optional, enables news search
+    pub serp_api_key: Option<String>,
+    /// Google Custom Search JSON API key — fallback if SerpAPI not set
+    pub google_api_key: Option<String>,
+    /// Google Custom Search Engine ID (cx parameter)
+    pub google_cx: Option<String>,
+    /// LinkedIn integration — stub for future use
+    pub linkedin_enabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResearchLimitsConfig {
+    pub max_news_articles: usize,
+    pub max_previous_exhibitions: usize,
+    /// Seconds before research attempt times out
+    pub research_timeout_seconds: u64,
+    /// Seconds between research requests (rate limiting)
+    pub request_delay_seconds: u64,
+}
+
+impl Default for ResearchLimitsConfig {
+    fn default() -> Self {
+        Self {
+            max_news_articles: 5,
+            max_previous_exhibitions: 10,
+            research_timeout_seconds: 30,
+            request_delay_seconds: 2,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

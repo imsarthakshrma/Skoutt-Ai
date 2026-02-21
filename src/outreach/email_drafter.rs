@@ -1,6 +1,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Skoutt — outreach/email_drafter.rs
-// Orchestrates Claude-powered email drafting
+// Orchestrates Claude-powered email drafting.
+// Uses ResearchReport when available; falls back to basic personalisation.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use anyhow::Result;
@@ -9,7 +10,10 @@ use tracing::info;
 use crate::{
     Company, CompanyConfig, Contact, EmailRecord, EmailType, Participation,
     database::Database,
-    intelligence::email_personalizer::{EmailDraft, EmailPersonalizer},
+    intelligence::{
+        deep_researcher::ResearchReport,
+        email_personalizer::{EmailDraft, EmailPersonalizer},
+    },
 };
 
 pub struct EmailDrafter {
@@ -23,28 +27,43 @@ impl EmailDrafter {
         }
     }
 
-    /// Draft an initial outreach email for a contact
+    /// Draft an initial outreach email.
+    /// When `research` is provided, uses the deep research-enhanced path for
+    /// genuinely personalized output. Falls back to basic when research is None.
     pub async fn draft_initial_email(
         &self,
         contact: &Contact,
         company: &Company,
         participation: Option<&Participation>,
         db: &Database,
+        research: Option<&ResearchReport>,
     ) -> Result<EmailDraft> {
-        // Get exhibition name if we have a participation
+        // Resolve exhibition name once
         let exhibition_name = if let Some(part) = participation {
             db.get_exhibition_name(&part.exhibition_id).await.ok().flatten()
         } else {
             None
         };
 
-        self.personalizer.personalize_initial_email(
-            contact,
-            company,
-            participation,
-            exhibition_name.as_deref(),
-            db,
-        ).await
+        if let Some(report) = research {
+            info!("    ✨ Using deep research for {}", contact.email);
+            self.personalizer.draft_researched_email(
+                contact,
+                company,
+                participation,
+                exhibition_name.as_deref(),
+                report,
+            ).await
+        } else {
+            info!("    ⚡ Using basic personalisation for {}", contact.email);
+            self.personalizer.personalize_initial_email(
+                contact,
+                company,
+                participation,
+                exhibition_name.as_deref(),
+                db,
+            ).await
+        }
     }
 
     /// Draft a follow-up email based on the original
@@ -86,7 +105,7 @@ impl EmailDrafter {
                 (subject, body)
             }
             EmailType::Initial => {
-                return self.draft_initial_email(contact, &company, None, db).await;
+                return self.draft_initial_email(contact, &company, None, db, None).await;
             }
         };
 

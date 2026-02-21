@@ -146,6 +146,38 @@ CREATE TABLE IF NOT EXISTS scrape_cache (
 );
 
 -- ─────────────────────────────────────────────────────────────────────────
+-- Research reports (deep intelligence before email drafting)
+-- ─────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS research_reports (
+    id                      TEXT PRIMARY KEY,
+    contact_id              TEXT NOT NULL,
+    company_id              TEXT NOT NULL,
+    participation_id        TEXT NOT NULL,
+    researched_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Raw research sources
+    company_website_summary TEXT NOT NULL DEFAULT '',
+    recent_news             TEXT,          -- JSON array of NewsArticle
+    previous_exhibitions    TEXT,          -- JSON array of PreviousExhibition
+
+    -- Claude-synthesized intelligence
+    company_overview        TEXT NOT NULL DEFAULT '',
+    exhibition_strategy     TEXT NOT NULL DEFAULT '',
+    pain_points             TEXT NOT NULL DEFAULT '[]',  -- JSON array
+    personalization_hooks   TEXT NOT NULL DEFAULT '[]',  -- JSON array
+    email_angle             TEXT NOT NULL DEFAULT '',
+
+    -- Quality & caching
+    research_quality_score  REAL NOT NULL DEFAULT 0.0,
+    sources_used            TEXT NOT NULL DEFAULT '[]',  -- JSON array of source names
+    cached_until            TIMESTAMP,                   -- Valid for 30 days
+
+    FOREIGN KEY (contact_id)      REFERENCES contacts(id),
+    FOREIGN KEY (company_id)      REFERENCES companies(id),
+    FOREIGN KEY (participation_id) REFERENCES participations(id)
+);
+
+-- ─────────────────────────────────────────────────────────────────────────
 -- Indexes for performance
 -- ─────────────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_companies_enriched ON companies(enriched);
@@ -158,3 +190,5 @@ CREATE INDEX IF NOT EXISTS idx_emails_message_id ON emails_sent(message_id);
 CREATE INDEX IF NOT EXISTS idx_participations_exhibition ON participations(exhibition_id);
 CREATE INDEX IF NOT EXISTS idx_exhibitions_sector_region ON exhibitions(sector, region);
 CREATE INDEX IF NOT EXISTS idx_scrape_cache_expires ON scrape_cache(expires_at);
+CREATE INDEX IF NOT EXISTS idx_research_contact ON research_reports(contact_id);
+CREATE INDEX IF NOT EXISTS idx_research_cached ON research_reports(cached_until);

@@ -103,6 +103,32 @@ cache_ttl_hours = 24
 path = "data/Skoutt.db"
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Deep Research Intelligence Layer
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[research]
+enabled           = true
+quality_threshold = 0.5   # Contacts below this score are skipped — not emailed
+cache_duration_days = 30  # Re-research after this many days
+
+[research.sources]
+# SerpAPI (https://serpapi.com) — preferred, ~$50/month for 5000 searches
+# Leave empty to start without; add once Skoutt proves ROI
+serp_api_key = ""
+
+# Google Custom Search JSON API — fallback if SerpAPI not set. Both optional.
+google_api_key = ""
+google_cx      = ""   # Programmable Search Engine ID
+
+# LinkedIn integration — future placeholder, not implemented
+linkedin_enabled = false
+
+[research.limits]
+max_news_articles       = 5
+max_previous_exhibitions = 10
+research_timeout_seconds = 30
+request_delay_seconds   = 2
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Logging
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [logging]
