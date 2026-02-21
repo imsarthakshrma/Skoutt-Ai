@@ -1,0 +1,37 @@
+{{!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Skoutt — Initial Outreach Email Template
+  This Handlebars template serves as a structural guide for Claude when
+  generating personalized initial cold emails. Claude uses the variables
+  below as context but writes the final email autonomously.
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ --}}
+
+{{!-- SUBJECT LINE: Claude generates this dynamically --}}
+{{!-- Convention: Reference the exhibition or industry, keep under 60 chars --}}
+
+Hi {{first_name}},
+
+{{#if exhibition_name}}
+I noticed {{company_name}} will be exhibiting at {{exhibition_name}}{{#if booth_number}} (Booth #{{booth_number}}){{/if}} — great choice of show for the {{industry}} sector.
+{{else}}
+I came across {{company_name}} while researching {{industry}} companies active on the trade show circuit.
+{{/if}}
+
+{{!-- PERSONALIZATION BLOCK: Claude fills this with research-backed insight --}}
+{{!-- Should reference: company products/services, recent news, or why they exhibit --}}
+{{research_insight}}
+
+At Track Exhibits, we handle the full booth journey — 3D design visualization, fabrication, and on-site setup — so you get one point of contact from concept to delivery. We work extensively across {{#each regions}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}.
+
+{{!-- VALUE PROP: Brief, relevant to their industry --}}
+{{value_proposition}}
+
+Would a brief call make sense to discuss your requirements for the upcoming show?
+
+Best regards,
+{{sender_name}}
+{{sender_title}}
+Track Exhibits Pvt LTD
+{{sender_website}}
+
+{{!-- FOOTER: Auto-injected by email_sender.rs --}}
+{{!-- Unsubscribe link is added automatically — do NOT include here --}}
