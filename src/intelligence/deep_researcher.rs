@@ -14,7 +14,9 @@ use uuid::Uuid;
 
 use crate::{Company, Contact, Exhibition, Participation, ResearchConfig};
 use crate::database::Database;
+use crate::intelligence::agentic_researcher::AgenticResearcher;
 use crate::intelligence::research_synthesizer::ResearchSynthesizer;
+use crate::python_bridge::crawl4ai_bridge;
 
 // ── Public data types ─────────────────────────────────────────────────────
 
@@ -112,10 +114,20 @@ pub struct DeepResearcher {
     config: ResearchConfig,
     http: Client,
     synthesizer: ResearchSynthesizer,
+    agentic: Option<AgenticResearcher>,
 }
 
 impl DeepResearcher {
     pub fn new(config: ResearchConfig, claude_api_key: String, claude_model: String) -> Self {
+        let agentic = if config.use_agentic {
+            Some(AgenticResearcher::new(
+                config.clone(),
+                claude_api_key.clone(),
+                claude_model.clone(),
+            ))
+        } else {
+            None
+        };
         Self {
             synthesizer: ResearchSynthesizer::new(claude_api_key, claude_model),
             config,
@@ -124,6 +136,7 @@ impl DeepResearcher {
                 .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .expect("HTTP client construction failed"),
+            agentic,
         }
     }
 
@@ -143,6 +156,18 @@ impl DeepResearcher {
         if let Ok(Some(cached)) = db.get_cached_research(&contact.id).await {
             debug!("  Using cached research (quality {:.2})", cached.research_quality_score);
             return Ok(Some(cached));
+        }
+
+        // ── 1b. Agentic path (if enabled) ────────────────────────────────
+        if let Some(ref agentic) = self.agentic {
+            info!("  Using agentic tool-calling research");
+            let result = agentic.research(
+                contact, company, participation, exhibition, db,
+            ).await?;
+            if let Some(ref report) = result {
+                let _ = db.store_research_report(report, self.config.cache_duration_days).await;
+            }
+            return Ok(result);
         }
 
         let mut sources_used: Vec<String> = Vec::new();
@@ -264,21 +289,41 @@ impl DeepResearcher {
             _ => return Ok(String::new()),
         };
 
-        let mut combined = String::new();
-
         // Normalise base URL
         let base = website.trim_end_matches('/').to_string();
 
-        // Pages to try: home, about, products/services
+        // Pages to scrape
         let pages = vec![
             base.clone(),
             format!("{}/about", base),
             format!("{}/about-us", base),
             format!("{}/products", base),
             format!("{}/services", base),
-            format!("{}/news", base),
         ];
 
+        // ── Try Crawl4AI first (JS-rendered) ──────────────────────────────
+        if self.config.crawl4ai_enabled {
+            debug!("  Trying Crawl4AI for {} …", company.name);
+            let crawl_pages: Vec<String> = pages.iter().take(3).cloned().collect();
+            let results = crawl4ai_bridge::scrape_pages(crawl_pages, 2000).await?;
+
+            let mut combined = String::new();
+            for page in &results {
+                if page.success && !page.content.is_empty() {
+                    combined.push_str(&page.content);
+                    combined.push('\n');
+                }
+            }
+
+            if !combined.trim().is_empty() {
+                debug!("  Crawl4AI returned {} chars for {}", combined.len(), company.name);
+                return Ok(combined.trim().to_string());
+            }
+            debug!("  Crawl4AI returned no content, falling back to reqwest");
+        }
+
+        // ── Fallback: basic reqwest (no JS rendering) ─────────────────────
+        let mut combined = String::new();
         for page in pages.iter().take(3) {
             if let Ok(resp) = self.http.get(page).send().await {
                 if resp.status().is_success() {
@@ -300,12 +345,37 @@ impl DeepResearcher {
     async fn search_company_news(&self, company_name: &str) -> Result<Vec<NewsArticle>> {
         let limit = self.config.limits.max_news_articles;
 
-        // SerpAPI (preferred)
+        // ── Try Crawl4AI first (scrapes Google News directly) ─────────────
+        if self.config.crawl4ai_enabled {
+            debug!("  Trying Crawl4AI news search for {} …", company_name);
+            let crawl_results = crawl4ai_bridge::search_news_via_crawl4ai(
+                company_name,
+                limit,
+            ).await?;
+
+            if !crawl_results.is_empty() {
+                let articles: Vec<NewsArticle> = crawl_results
+                    .into_iter()
+                    .map(|r| NewsArticle {
+                        title: r.title,
+                        source: r.source,
+                        url: r.url,
+                        summary: if r.full_content.is_empty() { r.snippet } else { r.full_content },
+                        published_date: None,
+                    })
+                    .collect();
+                debug!("  Crawl4AI found {} news articles for {}", articles.len(), company_name);
+                return Ok(articles);
+            }
+            debug!("  Crawl4AI news returned no results, trying API fallback");
+        }
+
+        // ── Fallback: SerpAPI (preferred API) ─────────────────────────────
         if let Some(key) = &self.config.sources.serp_api_key {
             return self.search_via_serp(company_name, key, limit).await;
         }
 
-        // Google Custom Search (fallback)
+        // ── Fallback: Google Custom Search ─────────────────────────────────
         if let (Some(key), Some(cx)) = (
             &self.config.sources.google_api_key,
             &self.config.sources.google_cx,
@@ -313,8 +383,8 @@ impl DeepResearcher {
             return self.search_via_google(company_name, key, cx, limit).await;
         }
 
-        // No API configured — silent skip
-        debug!("  No news API configured, skipping news search");
+        // No search method available — silent skip
+        debug!("  No news search method available, skipping");
         Ok(vec![])
     }
 

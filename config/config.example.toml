@@ -116,12 +116,22 @@ enabled           = true
 quality_threshold = 0.5   # Contacts below this score are skipped — not emailed
 cache_duration_days = 30  # Re-research after this many days
 
+# Crawl4AI: JS-rendered web scraping (pip install crawl4ai)
+# Uses a headless browser for richer page content. Falls back to reqwest if disabled.
+crawl4ai_enabled = true
+
+# Agentic Tool Calling: Let Claude decide what to research using tools.
+# When enabled, Claude iteratively calls scrape_page / search_news / check_exhibitions.
+# Requires more API calls but produces higher-quality, more targeted research.
+use_agentic = false       # Set to true to enable — uses ~3-5x more Claude tokens
+max_tool_rounds = 5       # Max tool-use iterations per contact
+
 [research.sources]
-# SerpAPI (https://serpapi.com) — preferred, ~$50/month for 5000 searches
+# SerpAPI (https://serpapi.com) — fallback for news when Crawl4AI can't get results
 # Leave empty to start without; add once Skoutt proves ROI
 serp_api_key = ""
 
-# Google Custom Search JSON API — fallback if SerpAPI not set. Both optional.
+# Google Custom Search JSON API — second fallback if SerpAPI not set. Both optional.
 google_api_key = ""
 google_cx      = ""   # Programmable Search Engine ID
 
