@@ -55,6 +55,12 @@ hunter_api_key = "REPLACE_WITH_HUNTER_KEY"
 regions = ["Middle East", "Europe", "Asia Pacific", "UK"]
 sectors = ["Tech", "Medical", "Pharma", "Auto"]
 
+# Lead-time window for exhibition outreach (in days before event start).
+# In international exhibition services, deals close ~30 days before.
+# So outreach must begin 45-90 days out to have time to close.
+lead_time_min_days = 45   # Don't reach out if event is < 45 days away (too late)
+lead_time_max_days = 90   # Don't scan events > 90 days away (too early)
+
 # Decision maker titles to target (in priority order)
 target_titles = [
     "Marketing Director",

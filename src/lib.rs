@@ -139,7 +139,16 @@ pub struct TargetingConfig {
     pub regions: Vec<String>,
     pub sectors: Vec<String>,
     pub target_titles: Vec<String>,
+    /// Minimum days before event start to begin outreach (default: 45)
+    #[serde(default = "default_lead_min")]
+    pub lead_time_min_days: i64,
+    /// Maximum days before event start to scan for events (default: 90)
+    #[serde(default = "default_lead_max")]
+    pub lead_time_max_days: i64,
 }
+
+fn default_lead_min() -> i64 { 45 }
+fn default_lead_max() -> i64 { 90 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SurvivalConfig {

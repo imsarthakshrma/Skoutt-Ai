@@ -4,8 +4,9 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use anyhow::Result;
+use chrono::{NaiveDate, Utc};
 use scraper::{Html, Selector};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{database::Database, Exhibition, ScrapingConfig, TargetingConfig};
 use super::Scraper;
@@ -119,6 +120,11 @@ impl ExhibitionFinder {
                 exhibition.start_date = parse_date_fuzzy(&date_text);
             }
 
+            // Lead-time window filter: only process events 45-90 days away
+            if !self.is_in_lead_window(exhibition.start_date) {
+                continue;
+            }
+
             match self.db.upsert_exhibition(&exhibition).await {
                 Ok(_) => count += 1,
                 Err(e) => warn!("  Failed to store exhibition '{}': {}", exhibition.name, e),
@@ -200,6 +206,28 @@ impl ExhibitionFinder {
             "UK" => "united-kingdom",
             _ => "world",
         }
+    }
+
+    /// Check if an event's start date falls within the lead-time window.
+    /// Events without a parsed date are kept (we err on the side of including).
+    fn is_in_lead_window(&self, start_date: Option<NaiveDate>) -> bool {
+        let Some(date) = start_date else {
+            return true; // no date parsed — keep it
+        };
+        let today = Utc::now().date_naive();
+        let days_until = (date - today).num_days();
+
+        if days_until < self.targeting.lead_time_min_days {
+            debug!("    ⏭ Event on {} — only {} days away (min {}), too late",
+                date, days_until, self.targeting.lead_time_min_days);
+            return false;
+        }
+        if days_until > self.targeting.lead_time_max_days {
+            debug!("    ⏭ Event on {} — {} days away (max {}), too far out",
+                date, days_until, self.targeting.lead_time_max_days);
+            return false;
+        }
+        true
     }
 
     fn region_keywords(&self, region: &str) -> Vec<&'static str> {
