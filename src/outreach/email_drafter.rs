@@ -84,7 +84,7 @@ impl EmailDrafter {
             EmailType::Followup1 => {
                 let subject = format!("Following up — {}", original.subject.trim_start_matches("Re: "));
                 let body = format!(
-                    "Hi {},\n\nJust wanted to circle back on my earlier note about your upcoming exhibition.\n\nHave you locked in a booth partner yet? We've been doing a lot of work with {} companies lately — design, fabrication, the whole setup on-site.\n\nWould love to share some ideas if you're still exploring. Happy to jump on a quick call this week.\n\nCheers,\nScott\nTrack Exhibits\n+91 98765 43210",
+                    "Hi {},\n\nJust wanted to circle back on my earlier note about your upcoming exhibition.\n\nHave you locked in a booth partner yet? We've been doing a lot of work with {} companies lately — design, fabrication, the whole setup on-site.\n\nWould love to share some ideas if you're still exploring. Happy to jump on a quick call this week.\n\nCheers,\nScott\nTrack Exhibits",
                     first_name, industry
                 );
                 (subject, body)
@@ -92,7 +92,7 @@ impl EmailDrafter {
             EmailType::Followup2 => {
                 let subject = format!("Some booth ideas for {} companies", industry);
                 let body = format!(
-                    "Hey {},\n\nThought I'd share a few recent projects we've done for {} companies at trade shows — might spark some ideas for your booth.\n\nOur approach: we handle booth design, fabrication, and the full installation on-site. One person to talk to throughout, which keeps things simple.\n\nWorth a quick chat? I can pull up examples relevant to what you're working on.\n\nBest,\nScott\nTrack Exhibits\n+91 98765 43210",
+                    "Hey {},\n\nThought I'd share a few recent projects we've done for {} companies at trade shows — might spark some ideas for your booth.\n\nOur approach: we handle booth design, fabrication, and the full installation on-site. One person to talk to throughout, which keeps things simple.\n\nWorth a quick chat? I can pull up examples relevant to what you're working on.\n\nBest,\nScott\nTrack Exhibits",
                     first_name, industry
                 );
                 (subject, body)
@@ -100,7 +100,7 @@ impl EmailDrafter {
             EmailType::Followup3 => {
                 let subject = "Last check-in before the exhibition".to_string();
                 let body = format!(
-                    "Hi {},\n\nLast follow-up from me — if your booth design is already sorted, totally understand!\n\nBut if you're still looking, we do quick turnarounds. Design to on-site install, even on tight timelines.\n\nEither way, best of luck at the show.\n\nTalk soon,\nScott\nTrack Exhibits\n+91 98765 43210",
+                    "Hi {},\n\nLast follow-up from me — if your booth design is already sorted, totally understand!\n\nBut if you're still looking, we do quick turnarounds. Design to on-site install, even on tight timelines.\n\nEither way, best of luck at the show.\n\nTalk soon,\nScott\nTrack Exhibits",
                     first_name
                 );
                 (subject, body)
