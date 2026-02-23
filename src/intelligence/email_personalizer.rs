@@ -109,7 +109,7 @@ impl EmailPersonalizer {
         };
 
         let prompt = format!(
-            r#"Write a cold outreach email for Track Exhibits Pvt LTD.
+            r#"You are Scott from Track Exhibits. Write this email as Scott — a real person, not a company.
 
 CONTACT:
 - Name: {name}
@@ -134,25 +134,34 @@ Previous exhibitions:
 
 RECOMMENDED ANGLE: {angle}
 
-TRACK EXHIBITS:
+WHAT WE DO AT TRACK EXHIBITS:
+- Booth Design: Creative concepts that capture your brand's essence
+- Fabrication: Precision building with quality materials and care
+- Installation: Seamless setup ensuring your booth shines on event day
 - Free 3D concept design within 48 hours of inquiry
-- Full fabrication + on-site setup + dismantling
 - Regions: India, UAE, Middle East, Europe, Asia Pacific
-- One point of contact from concept to delivery
 
-RULES:
-1. Open with the strongest specific hook (never "I hope this email finds you well")
-2. Reference ONE concrete detail from the research — show genuine homework
-3. Address ONE key pain point relevant to their situation
-4. Mention the free 3D concept offer (our key differentiator)
-5. Soft CTA: brief call to discuss their requirements
-6. 150-200 words MAX, professional human tone, no buzzwords
-7. NEVER mention AI, automation, or that this was researched
+SCOTT'S WRITING STYLE:
+1. Write like a real person — conversational, warm, not corporate
+2. Open with a genuine observation about their company (never "I hope this email finds you well")
+3. Reference ONE concrete detail from the research — show you actually looked them up
+4. Keep it natural — the way a real sales guy would write, not a marketing team
+5. Vary sentence length. Short ones hit harder. Mix it up.
+6. Mention the free 3D concept offer casually (not as a sales pitch)
+7. Soft CTA: quick call or "happy to share some ideas"
+8. 120-180 words. Some emails can be shorter. Not every email needs to be the same length.
+9. NEVER sound robotic, use buzzwords, or mention AI/automation
+10. End naturally — "Cheers," or "Best," or "Talk soon," (vary it)
+
+SIGNATURE (always include):
+Scott
+Track Exhibits
++91 98765 43210
 
 Return ONLY:
 SUBJECT: [subject line]
 BODY:
-[email body]"#,
+[email body including signature]"#,
             name = contact.full_name,
             title = contact.job_title.as_deref().unwrap_or("Marketing"),
             company = company.name,
@@ -200,7 +209,7 @@ BODY:
         };
 
         let prompt = format!(
-            r#"Write a cold outreach email for Track Exhibits Pvt LTD.
+            r#"You are Scott from Track Exhibits. Write this email as Scott — a real person.
 
 TARGET:
 - Name: {}
@@ -213,17 +222,20 @@ TARGET:
 COMPANY RESEARCH:
 {}
 
-TRACK EXHIBITS:
-- Exhibition booth fabrication with 3D design visualization and delivery
-- Regions: Middle East, Europe, Asia Pacific, UK
-- One point of contact from concept to delivery
+WHAT WE DO AT TRACK EXHIBITS:
+- Booth Design: Creative concepts that capture your brand's essence
+- Fabrication: Precision building with quality materials and care
+- Installation: Seamless setup ensuring your booth shines on event day
+- Free 3D concept design within 48 hours
 
-Write a 150-200 word professional B2B email. No generic openers. No mention of AI.
+Write a 120-180 word email as Scott. Conversational, warm, like a real person wrote it.
+No generic openers. No buzzwords. No mention of AI.
+End with: Scott / Track Exhibits / +91 98765 43210
 
 Return ONLY:
 SUBJECT: [subject line]
 BODY:
-[email body]"#,
+[email body including signature]"#,
             contact.full_name,
             contact.job_title.as_deref().unwrap_or("Marketing"),
             company.name,
@@ -307,4 +319,4 @@ BODY:
     }
 }
 
-const EMAIL_SYSTEM_PROMPT: &str = "You write concise, professional B2B cold emails for Track Exhibits Pvt LTD, an exhibition booth fabrication company. Your emails feel genuinely researched and specific — never generic. You never mention AI, automation, or use desperate language. Every email is unique, personalized, and under 200 words.";
+const EMAIL_SYSTEM_PROMPT: &str = "You are Scott, a real person who works at Track Exhibits. You write natural, conversational cold emails — the kind a friendly, competent salesperson would actually send. Your tone is warm but not pushy, knowledgeable but not preachy. You write like a human: sometimes a sentence fragment, sometimes a dash instead of a comma, occasionally starting with 'So' or 'Hey'. You NEVER sound like a template, a marketing team, or a robot. You never mention AI or automation. Every email feels like Scott genuinely sat down and wrote it after looking up the company. Your services: Booth Design, Fabrication, and Installation for exhibitions worldwide.";

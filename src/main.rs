@@ -231,7 +231,7 @@ async fn main() -> Result<()> {
                     if analysis.interest_level.is_actionable() {
                         if let Ok(Some(contact)) = db.get_contact_by_email(&reply.from_email).await {
                             if let Ok(Some(company)) = db.get_company(&contact.company_id).await {
-                                alert.send_interested_lead_alert(&contact, &company, reply, &analysis).await?;
+                                alert.send_interested_lead_alert(&contact, &company, reply, &analysis, None, None).await?;
                                 metrics.record_interested_reply().await?;
                             }
                         }
@@ -538,7 +538,33 @@ async fn run_daily_cycle(ctx: &AppContext) -> Result<()> {
                         info!("    🚨 INTERESTED: {} — {:?}", reply.from_email, analysis.interest_level);
                         if let Ok(Some(contact)) = ctx.db.get_contact_by_email(&reply.from_email).await {
                             if let Ok(Some(company)) = ctx.db.get_company(&contact.company_id).await {
-                                let _ = ctx.alert_system.send_interested_lead_alert(&contact, &company, reply, &analysis).await;
+                                // Build research briefing for the internal handoff
+                                let briefing = match ctx.db.get_research_report(&contact.id).await {
+                                    Ok(Some(report)) => {
+                                        let mut b = format!("Company: {}\n", report.company_overview);
+                                        b.push_str(&format!("Exhibition Strategy: {}\n", report.exhibition_strategy));
+                                        if !report.pain_points.is_empty() {
+                                            b.push_str("Pain Points:\n");
+                                            for p in &report.pain_points {
+                                                b.push_str(&format!("  • {}\n", p));
+                                            }
+                                        }
+                                        if !report.personalization_hooks.is_empty() {
+                                            b.push_str("Key Hooks:\n");
+                                            for h in &report.personalization_hooks {
+                                                b.push_str(&format!("  • {}\n", h));
+                                            }
+                                        }
+                                        b.push_str(&format!("Suggested Angle: {}\n", report.email_angle));
+                                        Some(b)
+                                    }
+                                    _ => None,
+                                };
+
+                                let _ = ctx.alert_system.send_interested_lead_alert(
+                                    &contact, &company, reply, &analysis,
+                                    briefing.as_deref(), None,
+                                ).await;
                                 let _ = ctx.metrics_tracker.record_interested_reply().await;
                             }
                         }

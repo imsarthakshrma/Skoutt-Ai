@@ -7,7 +7,7 @@
 [company]
 name = "Track Exhibits Pvt LTD"
 website = "https://trackexhibits.com"
-services = "Exhibition booth fabrication with 3D design visualization and delivery"
+services = "Booth Design, Fabrication, and Installation for exhibitions worldwide"
 tagline = "From concept to on-site setup — we handle everything"
 regions_served = ["Middle East", "Europe", "Asia Pacific", "UK"]
 
@@ -17,10 +17,10 @@ regions_served = ["Middle East", "Europe", "Asia Pacific", "UK"]
 [email]
 smtp_host = "smtp.gmail.com"
 smtp_port = 587
-smtp_user = "scout@trackexhibits.com"
+smtp_user = "scott@trackexhibits.com"
 smtp_password = "REPLACE_WITH_APP_PASSWORD"
-from_name = "Track Exhibits"
-from_email = "scout@trackexhibits.com"
+from_name = "Scott"
+from_email = "scott@trackexhibits.com"
 
 # Hard limits to avoid spam flags
 daily_limit = 60
@@ -34,7 +34,7 @@ max_bounce_rate_percent = 5
 [imap]
 host = "imap.gmail.com"
 port = 993
-username = "scout@trackexhibits.com"
+username = "scott@trackexhibits.com"
 password = "REPLACE_WITH_APP_PASSWORD"
 mailbox = "INBOX"
 poll_interval_seconds = 3600  # Check every hour

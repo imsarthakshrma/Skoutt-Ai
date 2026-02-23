@@ -15,6 +15,7 @@ build/
 .venv/
 venv/
 env/
+.env*
 
 # Skoutt runtime data (contains sensitive info and binary files)
 data/*.db
