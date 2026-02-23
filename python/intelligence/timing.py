@@ -7,6 +7,7 @@
 from datetime import datetime, timedelta, timezone
 import math
 import json
+import random
 from typing import Optional
 
 
@@ -134,7 +135,17 @@ class SendTimePredictor:
                 if utc_time.weekday() not in best_days:
                     continue
 
-                return utc_time
+                # Add human-like jitter: ±15 min + random seconds
+                # So emails don't arrive at machine-precise xx:00:00
+                jitter_minutes = random.randint(-15, 15)
+                jitter_seconds = random.randint(0, 59)
+                jittered = utc_time + timedelta(minutes=jitter_minutes, seconds=jitter_seconds)
+
+                # Ensure jitter didn't push us before earliest
+                if jittered <= earliest:
+                    jittered = earliest + timedelta(minutes=random.randint(1, 10), seconds=jitter_seconds)
+
+                return jittered
 
         # Fallback: send at the minimum delay
         return earliest

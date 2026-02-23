@@ -10,7 +10,11 @@ use tracing::{error, info, warn};
 use skoutt::{
     database::Database,
     enrichment::{apollo_client::ApolloClient, hunter_client::HunterClient},
-    intelligence::{company_researcher::CompanyResearcher, reply_analyzer::ReplyAnalyzer},
+    intelligence::{
+        company_researcher::CompanyResearcher,
+        deep_researcher::DeepResearcher,
+        reply_analyzer::ReplyAnalyzer,
+    },
     load_config,
     outreach::{
         email_drafter::EmailDrafter, email_sender::EmailSender,
@@ -22,6 +26,7 @@ use skoutt::{
         shutdown_manager::ShutdownManager,
     },
 };
+
 
 // ─────────────────────────────────────────────────────────────────────────
 // CLI Definition
@@ -93,7 +98,14 @@ enum Commands {
 
     /// Validate configuration and API connectivity
     Validate,
+
+    /// Show deep research report for a contact
+    Research {
+        /// Contact ID to look up research for
+        contact_id: String,
+    },
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────
 // Entry point
@@ -219,7 +231,7 @@ async fn main() -> Result<()> {
                     if analysis.interest_level.is_actionable() {
                         if let Ok(Some(contact)) = db.get_contact_by_email(&reply.from_email).await {
                             if let Ok(Some(company)) = db.get_company(&contact.company_id).await {
-                                alert.send_interested_lead_alert(&contact, &company, reply, &analysis).await?;
+                                alert.send_interested_lead_alert(&contact, &company, reply, &analysis, None, None).await?;
                                 metrics.record_interested_reply().await?;
                             }
                         }
@@ -263,6 +275,74 @@ async fn main() -> Result<()> {
                 println!("\n  ⚠️   Set SKOUTT_APIS__CLAUDE_API_KEY or fill config.toml");
             }
         }
+
+        Commands::Research { contact_id } => {
+            let db = Database::new(&config.database.path).await?;
+
+            match db.get_research_report(&contact_id).await? {
+                None => {
+                    println!("\n  ℹ️  No research report found for contact: {}", contact_id);
+                    println!("     Run `skoutt run` to trigger the research phase.");
+                }
+                Some(report) => {
+                    println!("\n{}", "━".repeat(60));
+                    println!("  RESEARCH REPORT  —  {}", contact_id);
+                    println!("{}", "━".repeat(60));
+                    println!("  Researched:  {}", report.researched_at.format("%Y-%m-%d %H:%M UTC"));
+                    println!("  Quality:     {:.2} / 1.00", report.research_quality_score);
+                    println!("  Sources:     {}", if report.sources_used.is_empty() {
+                        "none".into()
+                    } else {
+                        report.sources_used.join(", ")
+                    });
+
+                    println!("\n── Company Overview ─────────────────────────────────────");
+                    println!("  {}", report.company_overview);
+
+                    println!("\n── Exhibition Strategy ──────────────────────────────────");
+                    println!("  {}", report.exhibition_strategy);
+
+                    if !report.pain_points.is_empty() {
+                        println!("\n── Pain Points ──────────────────────────────────────────");
+                        for (i, p) in report.pain_points.iter().enumerate() {
+                            println!("  {}. {}", i + 1, p);
+                        }
+                    }
+
+                    if !report.personalization_hooks.is_empty() {
+                        println!("\n── Personalization Hooks ────────────────────────────────");
+                        for (i, h) in report.personalization_hooks.iter().enumerate() {
+                            println!("  {}. {}", i + 1, h);
+                        }
+                    }
+
+                    println!("\n── Email Angle ──────────────────────────────────────────");
+                    println!("  {}", report.email_angle);
+
+                    if !report.previous_exhibitions.is_empty() {
+                        println!("\n── Previous Exhibitions ─────────────────────────────────");
+                        for ex in &report.previous_exhibitions {
+                            println!(
+                                "  • {} ({}) — {}",
+                                ex.event_name,
+                                ex.date.map(|d| d.format("%Y").to_string()).unwrap_or_else(|| "?".to_string()),
+                                ex.location
+                            );
+                        }
+                    }
+
+                    if !report.recent_news.is_empty() {
+                        println!("\n── Recent News ──────────────────────────────────────────");
+                        for article in report.recent_news.iter().take(3) {
+                            println!("  • [{}] {}", article.source, article.title);
+                            println!("    {}", &article.summary.chars().take(120).collect::<String>());
+                        }
+                    }
+
+                    println!("{}", "━".repeat(60));
+                }
+            }
+        }
     }
 
     Ok(())
@@ -278,6 +358,7 @@ struct AppContext {
     apollo: ApolloClient,
     hunter: HunterClient,
     researcher: CompanyResearcher,
+    deep_researcher: DeepResearcher,
     drafter: EmailDrafter,
     sender: EmailSender,
     reply_monitor: ReplyMonitor,
@@ -297,6 +378,11 @@ async fn build_context(config: &skoutt::AppConfig, dry_run: bool) -> Result<AppC
         apollo: ApolloClient::new(config.apis.apollo_api_key.clone()),
         hunter: HunterClient::new(config.apis.hunter_api_key.clone()),
         researcher: CompanyResearcher::new(config.apis.claude_api_key.clone(), config.apis.claude_model.clone()),
+        deep_researcher: DeepResearcher::new(
+            config.research.clone(),
+            config.apis.claude_api_key.clone(),
+            config.apis.claude_model.clone(),
+        ),
         drafter: EmailDrafter::new(config.apis.claude_api_key.clone(), config.apis.claude_model.clone(), config.company.clone()),
         sender: EmailSender::new(config.email.clone(), dry_run),
         reply_monitor: ReplyMonitor::new(config.imap.clone()),
@@ -374,13 +460,46 @@ async fn run_daily_cycle(ctx: &AppContext) -> Result<()> {
         }
     }
 
+    // Phase 3a: Deep Research
+    info!("🔬  Phase 3a: Deep Research");
+    // Build research map: contact_id -> ResearchReport
+    let mut research_map: std::collections::HashMap<String, skoutt::intelligence::deep_researcher::ResearchReport> = std::collections::HashMap::new();
+    let research_targets = ctx.db.get_contacts_ready_for_outreach(60).await?;
+    for (contact, company, participation) in &research_targets {
+        if let Some(participation) = participation {
+            if let Ok(Some(exhibition)) = ctx.db.get_exhibition(&participation.exhibition_id).await {
+                match ctx.deep_researcher.research_contact(
+                    contact, &company, participation, &exhibition, &ctx.db
+                ).await {
+                    Ok(Some(report)) => {
+                        let _ = ctx.db.store_research_report(&report, 30).await;
+                        research_map.insert(contact.id.clone(), report);
+                    }
+                    Ok(None) => {
+                        info!("    ⏭  {} — skipping (below quality threshold)", contact.email);
+                    }
+                    Err(e) => warn!("    Research failed for {}: {e}", contact.email),
+                }
+            }
+        }
+    }
+    info!("    {} contacts researched, {} passed quality gate", research_targets.len(), research_map.len());
+
     // Phase 4: Drafting
     info!("✍️   Phase 4: Email Drafting");
     let targets = ctx.db.get_contacts_ready_for_outreach(60).await?;
     info!("    Drafting {} emails", targets.len());
     let mut drafts = Vec::new();
     for (contact, company, participation) in &targets {
-        match ctx.drafter.draft_initial_email(contact, company, participation.as_ref(), &ctx.db).await {
+        // Only draft if we either have research (quality-gated) or research is disabled
+        let research = research_map.get(&contact.id);
+        if research.is_none() && !research_map.is_empty() {
+            // Research ran but this contact didn't pass quality gate — skip
+            continue;
+        }
+        match ctx.drafter.draft_initial_email(
+            contact, company, participation.as_ref(), &ctx.db, research
+        ).await {
             Ok(draft) => drafts.push((contact.clone(), draft)),
             Err(e) => warn!("    Draft failed for {}: {e}", contact.email),
         }
@@ -419,7 +538,33 @@ async fn run_daily_cycle(ctx: &AppContext) -> Result<()> {
                         info!("    🚨 INTERESTED: {} — {:?}", reply.from_email, analysis.interest_level);
                         if let Ok(Some(contact)) = ctx.db.get_contact_by_email(&reply.from_email).await {
                             if let Ok(Some(company)) = ctx.db.get_company(&contact.company_id).await {
-                                let _ = ctx.alert_system.send_interested_lead_alert(&contact, &company, reply, &analysis).await;
+                                // Build research briefing for the internal handoff
+                                let briefing = match ctx.db.get_research_report(&contact.id).await {
+                                    Ok(Some(report)) => {
+                                        let mut b = format!("Company: {}\n", report.company_overview);
+                                        b.push_str(&format!("Exhibition Strategy: {}\n", report.exhibition_strategy));
+                                        if !report.pain_points.is_empty() {
+                                            b.push_str("Pain Points:\n");
+                                            for p in &report.pain_points {
+                                                b.push_str(&format!("  • {}\n", p));
+                                            }
+                                        }
+                                        if !report.personalization_hooks.is_empty() {
+                                            b.push_str("Key Hooks:\n");
+                                            for h in &report.personalization_hooks {
+                                                b.push_str(&format!("  • {}\n", h));
+                                            }
+                                        }
+                                        b.push_str(&format!("Suggested Angle: {}\n", report.email_angle));
+                                        Some(b)
+                                    }
+                                    _ => None,
+                                };
+
+                                let _ = ctx.alert_system.send_interested_lead_alert(
+                                    &contact, &company, reply, &analysis,
+                                    briefing.as_deref(), None,
+                                ).await;
                                 let _ = ctx.metrics_tracker.record_interested_reply().await;
                             }
                         }

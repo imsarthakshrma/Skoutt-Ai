@@ -106,6 +106,36 @@ impl Database {
         }).collect())
     }
 
+    /// Fetch a single exhibition by its ID.
+    pub async fn get_exhibition(&self, exhibition_id: &str) -> Result<Option<Exhibition>> {
+        let row = sqlx::query!(
+            r#"SELECT id, name, sector, region, start_date, end_date, location, city, country,
+               organizer_name, organizer_contact, website_url, exhibitor_list_url, source_url, discovered_at
+               FROM exhibitions WHERE id = ?"#,
+            exhibition_id
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| Exhibition {
+            id: r.id.unwrap_or_default(),
+            name: r.name,
+            sector: r.sector,
+            region: r.region,
+            start_date: r.start_date,
+            end_date: r.end_date,
+            location: r.location,
+            city: r.city,
+            country: r.country,
+            organizer_name: r.organizer_name,
+            organizer_contact: r.organizer_contact,
+            website_url: r.website_url,
+            exhibitor_list_url: r.exhibitor_list_url,
+            source_url: r.source_url,
+            discovered_at: naive_to_utc(r.discovered_at),
+        }))
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Company operations
     // ─────────────────────────────────────────────────────────────────────
@@ -666,4 +696,202 @@ impl Database {
         .await?;
         Ok(())
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Research report operations
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Store a completed research report (upsert by contact_id).
+    pub async fn store_research_report(
+        &self,
+        report: &crate::intelligence::deep_researcher::ResearchReport,
+        cache_days: i64,
+    ) -> Result<()> {
+        let news_json = serde_json::to_string(&report.recent_news).unwrap_or_default();
+        let prev_ex_json = serde_json::to_string(&report.previous_exhibitions).unwrap_or_default();
+        let pain_json = serde_json::to_string(&report.pain_points).unwrap_or_default();
+        let hooks_json = serde_json::to_string(&report.personalization_hooks).unwrap_or_default();
+        let sources_json = serde_json::to_string(&report.sources_used).unwrap_or_default();
+        let cached_until = Utc::now() + chrono::Duration::days(cache_days);
+
+        sqlx::query!(
+            r#"
+            INSERT INTO research_reports (
+                id, contact_id, company_id, participation_id, researched_at,
+                company_website_summary, recent_news, previous_exhibitions,
+                company_overview, exhibition_strategy,
+                pain_points, personalization_hooks, email_angle,
+                research_quality_score, sources_used, cached_until
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                company_website_summary = excluded.company_website_summary,
+                recent_news = excluded.recent_news,
+                previous_exhibitions = excluded.previous_exhibitions,
+                company_overview = excluded.company_overview,
+                exhibition_strategy = excluded.exhibition_strategy,
+                pain_points = excluded.pain_points,
+                personalization_hooks = excluded.personalization_hooks,
+                email_angle = excluded.email_angle,
+                research_quality_score = excluded.research_quality_score,
+                sources_used = excluded.sources_used,
+                cached_until = excluded.cached_until,
+                researched_at = excluded.researched_at
+            "#,
+            report.id,
+            report.contact_id,
+            report.company_id,
+            report.participation_id,
+            report.researched_at,
+            report.company_website_summary,
+            news_json,
+            prev_ex_json,
+            report.company_overview,
+            report.exhibition_strategy,
+            pain_json,
+            hooks_json,
+            report.email_angle,
+            report.research_quality_score,
+            sources_json,
+            cached_until,
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Fetch cached research if still valid (cached_until > now).
+    pub async fn get_cached_research(
+        &self,
+        contact_id: &str,
+    ) -> Result<Option<crate::intelligence::deep_researcher::ResearchReport>> {
+        let now = Utc::now().naive_utc();
+        let row = sqlx::query!(
+            r#"
+            SELECT id, contact_id, company_id, participation_id, researched_at,
+                   company_website_summary, recent_news, previous_exhibitions,
+                   company_overview, exhibition_strategy,
+                   pain_points, personalization_hooks, email_angle,
+                   research_quality_score, sources_used
+            FROM research_reports
+            WHERE contact_id = ? AND cached_until > ?
+            ORDER BY researched_at DESC
+            LIMIT 1
+            "#,
+            contact_id,
+            now,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| {
+            use crate::intelligence::deep_researcher::{NewsArticle, PreviousExhibition};
+            crate::intelligence::deep_researcher::ResearchReport {
+                id: r.id.unwrap_or_default(),
+                contact_id: r.contact_id,
+                company_id: r.company_id,
+                participation_id: r.participation_id,
+                researched_at: naive_to_utc(r.researched_at),
+                company_website_summary: r.company_website_summary,
+                recent_news: r.recent_news
+                    .and_then(|s| serde_json::from_str::<Vec<NewsArticle>>(&s).ok())
+                    .unwrap_or_default(),
+                previous_exhibitions: r.previous_exhibitions
+                    .and_then(|s| serde_json::from_str::<Vec<PreviousExhibition>>(&s).ok())
+                    .unwrap_or_default(),
+                company_overview: r.company_overview,
+                exhibition_strategy: r.exhibition_strategy,
+                pain_points: serde_json::from_str::<Vec<String>>(&r.pain_points)
+                    .unwrap_or_default(),
+                personalization_hooks: serde_json::from_str::<Vec<String>>(&r.personalization_hooks)
+                    .unwrap_or_default(),
+                email_angle: r.email_angle,
+                research_quality_score: r.research_quality_score,
+                sources_used: serde_json::from_str::<Vec<String>>(&r.sources_used)
+                    .unwrap_or_default(),
+            }
+        }))
+    }
+
+    /// Fetch research report for a contact for CLI display (ignores cache expiry).
+    pub async fn get_research_report(
+        &self,
+        contact_id: &str,
+    ) -> Result<Option<crate::intelligence::deep_researcher::ResearchReport>> {
+        let row = sqlx::query!(
+            r#"
+            SELECT id, contact_id, company_id, participation_id, researched_at,
+                   company_website_summary, recent_news, previous_exhibitions,
+                   company_overview, exhibition_strategy,
+                   pain_points, personalization_hooks, email_angle,
+                   research_quality_score, sources_used
+            FROM research_reports
+            WHERE contact_id = ?
+            ORDER BY researched_at DESC
+            LIMIT 1
+            "#,
+            contact_id,
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| {
+            use crate::intelligence::deep_researcher::{NewsArticle, PreviousExhibition};
+            crate::intelligence::deep_researcher::ResearchReport {
+                id: r.id.unwrap_or_default(),
+                contact_id: r.contact_id,
+                company_id: r.company_id,
+                participation_id: r.participation_id,
+                researched_at: naive_to_utc(r.researched_at),
+                company_website_summary: r.company_website_summary,
+                recent_news: r.recent_news
+                    .and_then(|s| serde_json::from_str::<Vec<NewsArticle>>(&s).ok())
+                    .unwrap_or_default(),
+                previous_exhibitions: r.previous_exhibitions
+                    .and_then(|s| serde_json::from_str::<Vec<PreviousExhibition>>(&s).ok())
+                    .unwrap_or_default(),
+                company_overview: r.company_overview,
+                exhibition_strategy: r.exhibition_strategy,
+                pain_points: serde_json::from_str::<Vec<String>>(&r.pain_points)
+                    .unwrap_or_default(),
+                personalization_hooks: serde_json::from_str::<Vec<String>>(&r.personalization_hooks)
+                    .unwrap_or_default(),
+                email_angle: r.email_angle,
+                research_quality_score: r.research_quality_score,
+                sources_used: serde_json::from_str::<Vec<String>>(&r.sources_used)
+                    .unwrap_or_default(),
+            }
+        }))
+    }
+
+    /// Previous exhibition participations for a company (for exhibition history).
+    /// Returns (event_name, date, location) tuples.
+    pub async fn get_past_participations(
+        &self,
+        company_id: &str,
+    ) -> Result<Vec<(String, Option<chrono::NaiveDate>, String)>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT e.name, e.start_date, e.location
+            FROM participations p
+            JOIN exhibitions e ON p.exhibition_id = e.id
+            WHERE p.company_id = ?
+            ORDER BY e.start_date DESC
+            "#,
+            company_id,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                (
+                    r.name,
+                    r.start_date,
+                    r.location.unwrap_or_else(|| "Unknown".to_string()),
+                )
+            })
+            .collect())
+    }
 }
+

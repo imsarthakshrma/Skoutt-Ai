@@ -1,6 +1,7 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Skoutt — intelligence/email_personalizer.rs
 // Claude-powered email personalization
+// Two modes: basic (company research) and researched (ResearchReport)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use anyhow::Result;
@@ -9,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Company, CompanyConfig, Contact, Participation};
 use crate::database::Database;
+use crate::intelligence::deep_researcher::ResearchReport;
 
 pub struct EmailPersonalizer {
     api_key: String,
@@ -52,25 +54,162 @@ impl EmailPersonalizer {
         Self { api_key, model, client: Client::new(), company_config }
     }
 
+    // ── Research-enhanced drafting (primary path) ─────────────────────────
+
+    /// Draft a highly personalized email using a ResearchReport.
+    /// This is the primary path — used when deep research is available.
+    pub async fn draft_researched_email(
+        &self,
+        contact: &Contact,
+        company: &Company,
+        participation: Option<&Participation>,
+        exhibition_name: Option<&str>,
+        research: &ResearchReport,
+    ) -> Result<EmailDraft> {
+        let exhibition_info = if let Some(part) = participation {
+            let booth = part.booth_number.as_deref().unwrap_or("TBA");
+            let ex_name = exhibition_name.unwrap_or("the upcoming exhibition");
+            format!("Exhibiting at {} (booth: {}).", ex_name, booth)
+        } else {
+            "Participates in trade shows.".to_string()
+        };
+
+        let pain_points_block = if research.pain_points.is_empty() {
+            "Not specifically identified.".to_string()
+        } else {
+            research.pain_points.iter()
+                .enumerate()
+                .map(|(i, p)| format!("{}. {}", i + 1, p))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let hooks_block = if research.personalization_hooks.is_empty() {
+            "Use their exhibition participation and industry.".to_string()
+        } else {
+            research.personalization_hooks.iter()
+                .enumerate()
+                .map(|(i, h)| format!("{}. {}", i + 1, h))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let prev_ex_block = if research.previous_exhibitions.is_empty() {
+            "No previous exhibition history found.".to_string()
+        } else {
+            research.previous_exhibitions.iter()
+                .take(3)
+                .map(|e| format!(
+                    "• {} ({})",
+                    e.event_name,
+                    e.date.map(|d| d.format("%Y").to_string()).unwrap_or_else(|| "?".to_string())
+                ))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let prompt = format!(
+            r#"You are Scott from Track Exhibits. Write this email as Scott — a real person, not a company.
+
+CONTACT:
+- Name: {name}
+- Title: {title}
+- Company: {company}
+- Industry: {industry}
+- Location: {location}
+- {exhibition_info}
+
+COMPANY INTELLIGENCE:
+Overview: {overview}
+Exhibition strategy: {strategy}
+
+Pain points we can solve:
+{pain_points}
+
+Best personalization hooks to use in opening:
+{hooks}
+
+Previous exhibitions:
+{prev_exhibs}
+
+RECOMMENDED ANGLE: {angle}
+
+WHAT WE DO AT TRACK EXHIBITS:
+- Booth Design: Creative concepts that capture your brand's essence
+- Fabrication: Precision building with quality materials and care
+- Installation: Seamless setup ensuring your booth shines on event day
+- Free 3D concept design within 48 hours of inquiry
+- Regions: India, UAE, Middle East, Europe, Asia Pacific
+
+SCOTT'S WRITING STYLE:
+1. Write like a real person — conversational, warm, not corporate
+2. Open with a genuine observation about their company (never "I hope this email finds you well")
+3. Reference ONE concrete detail from the research — show you actually looked them up
+4. Keep it natural — the way a real sales guy would write, not a marketing team
+5. Vary sentence length. Short ones hit harder. Mix it up.
+6. Mention the free 3D concept offer casually (not as a sales pitch)
+7. Soft CTA: quick call or "happy to share some ideas"
+8. 120-180 words. Some emails can be shorter. Not every email needs to be the same length.
+9. NEVER sound robotic, use buzzwords, or mention AI/automation
+10. End naturally — "Cheers," or "Best," or "Talk soon," (vary it)
+
+SIGNATURE (always include):
+Scott
+Track Exhibits
++91 98765 43210
+
+Return ONLY:
+SUBJECT: [subject line]
+BODY:
+[email body including signature]"#,
+            name = contact.full_name,
+            title = contact.job_title.as_deref().unwrap_or("Marketing"),
+            company = company.name,
+            industry = company.industry.as_deref().unwrap_or("their sector"),
+            location = company.location.as_deref().unwrap_or(""),
+            overview = research.company_overview,
+            strategy = research.exhibition_strategy,
+            pain_points = pain_points_block,
+            hooks = hooks_block,
+            prev_exhibs = prev_ex_block,
+            angle = research.email_angle,
+        );
+
+        let request = ClaudeRequest {
+            model: self.model.clone(),
+            max_tokens: 600,
+            system: EMAIL_SYSTEM_PROMPT.to_string(),
+            messages: vec![ClaudeMessage {
+                role: "user".to_string(),
+                content: prompt,
+            }],
+        };
+
+        let text = self.call_claude(request).await?;
+        self.parse_email_draft(&text)
+    }
+
+    // ── Fallback basic drafting ────────────────────────────────────────────
+
     pub async fn personalize_initial_email(
         &self,
         contact: &Contact,
         company: &Company,
         participation: Option<&Participation>,
         exhibition_name: Option<&str>,
-        db: &Database,
+        _db: &Database,
     ) -> Result<EmailDraft> {
         let research = company.research_summary.as_deref().unwrap_or("No research available");
         let exhibition_info = if let Some(part) = participation {
             let booth = part.booth_number.as_deref().unwrap_or("TBD");
             let ex_name = exhibition_name.unwrap_or("the upcoming exhibition");
-            format!("They are exhibiting at {} (Booth #{}).", ex_name, booth)
+            format!("Exhibiting at {} (Booth #{}).", ex_name, booth)
         } else {
-            "They participate in trade shows in their sector.".to_string()
+            "Participates in trade shows.".to_string()
         };
 
         let prompt = format!(
-            r#"Write a cold outreach email for Track Exhibits Pvt LTD.
+            r#"You are Scott from Track Exhibits. Write this email as Scott — a real person.
 
 TARGET:
 - Name: {}
@@ -83,28 +222,20 @@ TARGET:
 COMPANY RESEARCH:
 {}
 
-TRACK EXHIBITS INFO:
-- Service: Exhibition booth fabrication with 3D design visualization and delivery
-- Regions: Middle East, Europe, Asia Pacific, UK
-- USP: Complete service (3D mockups → fabrication → on-site setup)
-- One point of contact from concept to delivery
+WHAT WE DO AT TRACK EXHIBITS:
+- Booth Design: Creative concepts that capture your brand's essence
+- Fabrication: Precision building with quality materials and care
+- Installation: Seamless setup ensuring your booth shines on event day
+- Free 3D concept design within 48 hours
 
-Write a professional B2B email that:
-1. References their specific exhibition participation
-2. Shows genuine research into their company
-3. Mentions Track Exhibits' relevant experience for their sector
-4. Clear value prop (3D design + fabrication + delivery)
-5. Soft CTA (brief call to discuss requirements)
-6. 150-200 words MAX
-7. Professional B2B tone
-8. NO mention of AI or automation
-9. NO desperate or pushy language
-10. NO generic phrases like "I hope this email finds you well"
+Write a 120-180 word email as Scott. Conversational, warm, like a real person wrote it.
+No generic openers. No buzzwords. No mention of AI.
+End with: Scott / Track Exhibits / +91 98765 43210
 
-Return ONLY in this format:
+Return ONLY:
 SUBJECT: [subject line]
 BODY:
-[email body]"#,
+[email body including signature]"#,
             contact.full_name,
             contact.job_title.as_deref().unwrap_or("Marketing"),
             company.name,
@@ -117,13 +248,20 @@ BODY:
         let request = ClaudeRequest {
             model: self.model.clone(),
             max_tokens: 600,
-            system: "You write concise, professional B2B cold emails for Track Exhibits Pvt LTD. Your emails feel genuinely researched, never generic. You never mention AI, automation, or use desperate language. Every email is unique and personalized.".to_string(),
+            system: EMAIL_SYSTEM_PROMPT.to_string(),
             messages: vec![ClaudeMessage {
                 role: "user".to_string(),
                 content: prompt,
             }],
         };
 
+        let text = self.call_claude(request).await?;
+        self.parse_email_draft(&text)
+    }
+
+    // ── Shared helpers ────────────────────────────────────────────────────
+
+    async fn call_claude(&self, request: ClaudeRequest) -> Result<String> {
         let response = self.client
             .post("https://api.anthropic.com/v1/messages")
             .header("x-api-key", &self.api_key)
@@ -136,17 +274,19 @@ BODY:
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!("Claude API error {}: {}", status, &text[..200.min(text.len())]));
+            return Err(anyhow::anyhow!(
+                "Claude API error {}: {}",
+                status,
+                &text[..200.min(text.len())]
+            ));
         }
 
         let claude_response: ClaudeResponse = response.json().await?;
-        let text = claude_response.content
+        Ok(claude_response.content
             .into_iter()
             .next()
             .map(|c| c.text)
-            .unwrap_or_default();
-
-        self.parse_email_draft(&text)
+            .unwrap_or_default())
     }
 
     fn parse_email_draft(&self, text: &str) -> Result<EmailDraft> {
@@ -166,7 +306,6 @@ BODY:
         }
 
         if subject.is_empty() {
-            // Try to extract from first line
             subject = lines.first().copied().unwrap_or("Exhibition Booth Design").to_string();
         }
 
@@ -179,3 +318,5 @@ BODY:
         Ok(EmailDraft { subject, body })
     }
 }
+
+const EMAIL_SYSTEM_PROMPT: &str = "You are Scott, a real person who works at Track Exhibits. You write natural, conversational cold emails — the kind a friendly, competent salesperson would actually send. Your tone is warm but not pushy, knowledgeable but not preachy. You write like a human: sometimes a sentence fragment, sometimes a dash instead of a comma, occasionally starting with 'So' or 'Hey'. You NEVER sound like a template, a marketing team, or a robot. You never mention AI or automation. Every email feels like Scott genuinely sat down and wrote it after looking up the company. Your services: Booth Design, Fabrication, and Installation for exhibitions worldwide.";

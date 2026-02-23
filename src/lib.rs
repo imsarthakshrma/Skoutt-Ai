@@ -32,6 +32,65 @@ pub struct AppConfig {
     pub scraping: ScrapingConfig,
     pub database: DatabaseConfig,
     pub logging: LoggingConfig,
+    #[serde(default)]
+    pub research: ResearchConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResearchConfig {
+    /// Master switch — set false to skip deep research entirely
+    pub enabled: bool,
+    /// Contacts below this score are skipped (no email drafted)
+    pub quality_threshold: f64,
+    /// How many days to cache research before re-running
+    pub cache_duration_days: i64,
+    pub sources: ResearchSourcesConfig,
+    pub limits: ResearchLimitsConfig,
+}
+
+impl Default for ResearchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            quality_threshold: 0.5,
+            cache_duration_days: 30,
+            sources: ResearchSourcesConfig::default(),
+            limits: ResearchLimitsConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ResearchSourcesConfig {
+    /// SerpAPI key (https://serpapi.com) — optional, enables news search
+    pub serp_api_key: Option<String>,
+    /// Google Custom Search JSON API key — fallback if SerpAPI not set
+    pub google_api_key: Option<String>,
+    /// Google Custom Search Engine ID (cx parameter)
+    pub google_cx: Option<String>,
+    /// LinkedIn integration — stub for future use
+    pub linkedin_enabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResearchLimitsConfig {
+    pub max_news_articles: usize,
+    pub max_previous_exhibitions: usize,
+    /// Seconds before research attempt times out
+    pub research_timeout_seconds: u64,
+    /// Seconds between research requests (rate limiting)
+    pub request_delay_seconds: u64,
+}
+
+impl Default for ResearchLimitsConfig {
+    fn default() -> Self {
+        Self {
+            max_news_articles: 5,
+            max_previous_exhibitions: 10,
+            research_timeout_seconds: 30,
+            request_delay_seconds: 2,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -80,7 +139,16 @@ pub struct TargetingConfig {
     pub regions: Vec<String>,
     pub sectors: Vec<String>,
     pub target_titles: Vec<String>,
+    /// Minimum days before event start to begin outreach (default: 45)
+    #[serde(default = "default_lead_min")]
+    pub lead_time_min_days: i64,
+    /// Maximum days before event start to scan for events (default: 90)
+    #[serde(default = "default_lead_max")]
+    pub lead_time_max_days: i64,
 }
+
+fn default_lead_min() -> i64 { 45 }
+fn default_lead_max() -> i64 { 90 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SurvivalConfig {

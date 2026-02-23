@@ -27,15 +27,18 @@ impl AlertSystem {
         Self { email_config, config, dry_run }
     }
 
-    /// Send immediate alert when an interested lead is detected
+    /// Send immediate alert when an interested lead is detected.
+    /// Includes full deep research briefing + conversation thread for internal handoff.
     pub async fn send_interested_lead_alert(
         &self,
         contact: &Contact,
         company: &Company,
         reply: &IncomingReply,
         analysis: &ReplyAnalysis,
+        research_briefing: Option<&str>,
+        conversation_thread: Option<&str>,
     ) -> Result<()> {
-        let subject = format!("🚨 Skoutt: Interested Lead — {}", company.name);
+        let subject = format!("🚨 HOT LEAD — {} at {}", contact.full_name, company.name);
 
         let signals_text = analysis.signals
             .iter()
@@ -43,9 +46,40 @@ impl AlertSystem {
             .collect::<Vec<_>>()
             .join("\n");
 
+        let research_section = if let Some(briefing) = research_briefing {
+            format!(
+                r#"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEEP RESEARCH BRIEFING:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{}
+"#,
+                briefing
+            )
+        } else {
+            format!(
+                "COMPANY BACKGROUND:\n{}\n",
+                company.research_summary.as_deref().unwrap_or("No research available")
+            )
+        };
+
+        let thread_section = if let Some(thread) = conversation_thread {
+            format!(
+                r#"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FULL CONVERSATION THREAD:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{}
+"#,
+                thread
+            )
+        } else {
+            String::new()
+        };
+
         let body = format!(
             r#"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-INTERESTED LEAD ALERT
+🚨  INTERESTED LEAD — ACTION REQUIRED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Company:   {}
@@ -74,18 +108,15 @@ RECOMMENDED NEXT STEP:
 
 {}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-COMPANY BACKGROUND:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 {}
-
+{}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Reply to this lead directly at: {}
-Skoutt has paused automated follow-ups to this contact.
+⚠️  Scott has paused automated follow-ups to this contact.
+📧  Reply directly to: {}
+📞  Their phone: {}
 
-— Skoutt Agent"#,
+— Skoutt Agent (automated internal alert)"#,
             company.name,
             contact.full_name,
             contact.job_title.as_deref().unwrap_or("Unknown"),
@@ -95,8 +126,10 @@ Skoutt has paused automated follow-ups to this contact.
             analysis.interest_level_str(),
             signals_text,
             analysis.next_step,
-            company.research_summary.as_deref().unwrap_or("No research available"),
+            research_section,
+            thread_section,
             contact.email,
+            contact.phone.as_deref().unwrap_or("Not available"),
         );
 
         self.send_alert_email(&subject, &body).await?;
