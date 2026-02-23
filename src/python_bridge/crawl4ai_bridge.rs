@@ -181,5 +181,13 @@ async fn run_crawler_subprocess(input_json: &str, timeout: Duration) -> Result<S
     let stdout = String::from_utf8(output.stdout)
         .map_err(|e| anyhow::anyhow!("Crawl4AI output not UTF-8: {e}"))?;
 
-    Ok(stdout)
+    // Crawl4AI prints "[INIT].... → Crawl4AI 0.8.0" to stdout before our JSON.
+    // Extract only the JSON line (starts with '{').
+    let json_line = stdout
+        .lines()
+        .rev()
+        .find(|line| line.trim_start().starts_with('{'))
+        .unwrap_or(&stdout);
+
+    Ok(json_line.to_string())
 }

@@ -1,15 +1,36 @@
 #!/usr/bin/env python3
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Skoutt — python/intelligence/crawl4ai_scraper.py
-# Standalone CLI for JS-rendered web scraping via Crawl4AI.
+# Standalone CLI for JS-rendered web scraping via Crawl4AI (v0.8.x).
 # Called from Rust as a subprocess: JSON in via stdin, JSON out via stdout.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 import asyncio
 import json
+import os
 import sys
 import traceback
 from typing import Optional
+
+
+# Suppress Crawl4AI's [INIT] banner that gets printed to stdout
+# (would break JSON parsing in the Rust bridge)
+os.environ["CRAWL4AI_QUIET"] = "1"
+
+
+def _get_raw_markdown(result) -> str:
+    """Extract raw markdown from a CrawlResult, handling both v0.8.x
+    (MarkdownGenerationResult object) and older versions (plain string)."""
+    md = result.markdown
+    if md is None:
+        return ""
+    # v0.8.x: md is a MarkdownGenerationResult with .raw_markdown
+    if hasattr(md, "raw_markdown"):
+        return md.raw_markdown or ""
+    # Older versions: md is a plain string
+    if isinstance(md, str):
+        return md
+    return str(md)
 
 
 async def scrape_urls(urls: list[str], max_chars: int = 3000, timeout: int = 30) -> list[dict]:
@@ -21,20 +42,17 @@ async def scrape_urls(urls: list[str], max_chars: int = 3000, timeout: int = 30)
     try:
         from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
     except ImportError:
-        # crawl4ai not installed — return empty results
         return [{"url": u, "content": "", "success": False, "error": "crawl4ai not installed"} for u in urls]
 
     results = []
     
     browser_config = BrowserConfig(
         headless=True,
-        verbose=False,
     )
     
     crawler_config = CrawlerRunConfig(
-        word_count_threshold=50,       # Skip very short pages
-        exclude_external_links=True,   # Keep it focused
-        remove_overlay_elements=True,  # Remove popups/modals
+        word_count_threshold=50,
+        verbose=False,
     )
 
     try:
@@ -47,8 +65,10 @@ async def scrape_urls(urls: list[str], max_chars: int = 3000, timeout: int = 30)
                     )
                     
                     if result.success:
-                        # Use markdown content (best for LLM consumption)
-                        content = result.markdown or result.cleaned_html or ""
+                        content = _get_raw_markdown(result)
+                        if not content:
+                            content = result.cleaned_html or ""
+                        
                         # Truncate to max chars
                         if len(content) > max_chars:
                             content = content[:max_chars] + "\n...[truncated]"
@@ -64,7 +84,7 @@ async def scrape_urls(urls: list[str], max_chars: int = 3000, timeout: int = 30)
                             "url": url,
                             "content": "",
                             "success": False,
-                            "error": f"Crawl failed: {result.error_message or 'unknown'}",
+                            "error": f"Crawl failed: {getattr(result, 'error_message', 'unknown')}",
                         })
                         
                 except asyncio.TimeoutError:
@@ -83,7 +103,6 @@ async def scrape_urls(urls: list[str], max_chars: int = 3000, timeout: int = 30)
                     })
 
     except Exception as e:
-        # Browser setup failed — return all as errors
         return [{"url": u, "content": "", "success": False, "error": f"Browser init failed: {e}"} for u in urls]
 
     return results
@@ -116,13 +135,11 @@ async def search_news_via_crawl4ai(
     
     browser_config = BrowserConfig(
         headless=True,
-        verbose=False,
     )
     
     crawler_config = CrawlerRunConfig(
         word_count_threshold=30,
-        exclude_external_links=False,   # We need the article links
-        remove_overlay_elements=True,
+        verbose=False,
     )
 
     articles = []
@@ -136,12 +153,13 @@ async def search_news_via_crawl4ai(
                     timeout=timeout,
                 )
                 
-                if result.success and result.markdown:
-                    # Parse the search results from markdown
-                    articles = _parse_news_from_markdown(
-                        result.markdown,
-                        max_articles=max_articles,
-                    )
+                if result.success:
+                    content = _get_raw_markdown(result)
+                    if content:
+                        articles = _parse_news_from_markdown(
+                            content,
+                            max_articles=max_articles,
+                        )
             except (asyncio.TimeoutError, Exception) as e:
                 # Google search failed, try Google News
                 try:
@@ -149,11 +167,13 @@ async def search_news_via_crawl4ai(
                         crawler.arun(url=google_news_url, config=crawler_config),
                         timeout=timeout,
                     )
-                    if result.success and result.markdown:
-                        articles = _parse_news_from_markdown(
-                            result.markdown,
-                            max_articles=max_articles,
-                        )
+                    if result.success:
+                        content = _get_raw_markdown(result)
+                        if content:
+                            articles = _parse_news_from_markdown(
+                                content,
+                                max_articles=max_articles,
+                            )
                 except Exception:
                     pass
                     
@@ -166,9 +186,10 @@ async def search_news_via_crawl4ai(
                             crawler.arun(url=article["url"], config=crawler_config),
                             timeout=15,
                         )
-                        if detail.success and detail.markdown:
-                            content = detail.markdown[:max_chars_per_article]
-                            article["full_content"] = content
+                        if detail.success:
+                            detail_md = _get_raw_markdown(detail)
+                            if detail_md:
+                                article["full_content"] = detail_md[:max_chars_per_article]
                     except Exception:
                         pass
                 enriched.append(article)
