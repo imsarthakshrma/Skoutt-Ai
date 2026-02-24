@@ -2,6 +2,7 @@
 // Skoutt — intelligence/mod.rs
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+pub mod chat;
 pub mod agentic_researcher;
 pub mod company_researcher;
 pub mod deep_researcher;

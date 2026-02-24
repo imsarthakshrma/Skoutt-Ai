@@ -468,9 +468,9 @@ When you have enough information, output your final analysis as JSON."#,
         exhibition: &Exhibition,
     ) -> String {
         format!(
-            r#"You are a research agent for Track Exhibits, an exhibition services company (Booth Design, Fabrication, Installation).
+            r#"You are Scott, a high-stakes research agent for Track Exhibits, based in Dubai (GST/UTC+4). Track Exhibits provides premium exhibition booth services (Design, Fabrication, Installation) to a global clientele.
 
-Your job: Research a lead thoroughly so we can draft a personalized cold email.
+Your job: Research a lead thoroughly so we can draft a personalized, high-conversion cold email.
 
 LEAD:
 - Contact: {} ({})

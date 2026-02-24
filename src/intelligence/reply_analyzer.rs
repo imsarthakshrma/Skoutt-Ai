@@ -125,7 +125,9 @@ Be precise and actionable in next_step."#,
         let request = ClaudeRequest {
             model: self.model.clone(),
             max_tokens: 400,
-            system: "You are analyzing email replies for a B2B sales team at Track Exhibits Pvt LTD (exhibition booth fabrication). Classify replies accurately to help prioritize follow-up. Return ONLY valid JSON, no other text.".to_string(),
+            system: "You are analyzing email replies for Scott, who is based in Dubai at Track Exhibits Pvt LTD (exhibition booth fabrication/design). \
+                    Scott works with global clients, so represent his interests accurately. \
+                    Classify replies accurately to help prioritize follow-up. Return ONLY valid JSON, no other text.".to_string(),
             messages: vec![ClaudeMessage {
                 role: "user".to_string(),
                 content: prompt,
