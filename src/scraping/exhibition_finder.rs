@@ -1,211 +1,129 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Skoutt — scraping/exhibition_finder.rs
-// Discovers exhibitions from aggregator sites
+// Discovers exhibitions from:
+//   1. Seed list (config/seed_exhibitions.toml) — curated known exhibitions
+//   2. Google search + Crawl4AI (when SerpAPI/Google API keys are available)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 use anyhow::Result;
 use chrono::{NaiveDate, Utc};
-use scraper::{Html, Selector};
+use serde::Deserialize;
 use tracing::{debug, info, warn};
 
 use crate::{database::Database, Exhibition, ScrapingConfig, TargetingConfig};
-use super::Scraper;
+
+// ── Seed exhibition TOML format ──────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+struct SeedFile {
+    exhibition: Vec<SeedExhibition>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SeedExhibition {
+    name: String,
+    sector: String,
+    region: String,
+    location: Option<String>,
+    website: Option<String>,
+    start_date: Option<String>,
+}
+
+// ── ExhibitionFinder ─────────────────────────────────────────────────────
 
 pub struct ExhibitionFinder {
-    scraper: Scraper,
     targeting: TargetingConfig,
     db: Database,
+    _config: ScrapingConfig,
 }
 
 impl ExhibitionFinder {
     pub fn new(config: ScrapingConfig, targeting: TargetingConfig, db: Database) -> Self {
         Self {
-            scraper: Scraper::new(config).expect("Failed to create scraper"),
             targeting,
             db,
+            _config: config,
         }
     }
 
-    /// Main discovery method — searches all configured sources
+    /// Main discovery method
+    /// 1. Load seed exhibitions from config/seed_exhibitions.toml
+    /// 2. (Future: Google search / SerpAPI for additional exhibitions)
     pub async fn discover_exhibitions(&self) -> Result<usize> {
         let mut total = 0;
 
-        for sector in &self.targeting.sectors {
-            for region in &self.targeting.regions {
-                info!("  Searching: {} exhibitions in {}", sector, region);
-
-                // Try 10times.com
-                match self.search_10times(sector, region).await {
-                    Ok(count) => total += count,
-                    Err(e) => warn!("  10times.com failed for {}/{}: {}", sector, region, e),
-                }
-
-                // Try Expodatabase
-                match self.search_expodatabase(sector, region).await {
-                    Ok(count) => total += count,
-                    Err(e) => warn!("  Expodatabase failed for {}/{}: {}", sector, region, e),
-                }
+        // ── Source 1: Seed exhibitions ────────────────────────────────
+        match self.load_seed_exhibitions().await {
+            Ok(count) => {
+                total += count;
+                info!("    {} exhibitions loaded from seed list", count);
             }
+            Err(e) => warn!("    Failed to load seed exhibitions: {}", e),
         }
+
+        // ── Source 2: Google search (future — needs SerpAPI key) ─────
+        // When research.sources.serp_api_key is set, we can search for:
+        //   "upcoming {sector} exhibition {region} {year}"
+        // and parse results for additional exhibitions.
 
         Ok(total)
     }
 
-    /// Search 10times.com for exhibitions
-    async fn search_10times(&self, sector: &str, region: &str) -> Result<usize> {
-        let sector_slug = self.sector_to_10times_slug(sector);
-        let region_slug = self.region_to_10times_slug(region);
-        let url = format!(
-            "https://10times.com/{}/{}",
-            region_slug, sector_slug
-        );
+    /// Load exhibitions from config/seed_exhibitions.toml
+    async fn load_seed_exhibitions(&self) -> Result<usize> {
+        let seed_path = "config/seed_exhibitions.toml";
+        let content = tokio::fs::read_to_string(seed_path).await.map_err(|e| {
+            anyhow::anyhow!(
+                "Cannot read {}: {} — create it from the template",
+                seed_path,
+                e
+            )
+        })?;
 
-        // Check cache first
-        if let Ok(Some(cached)) = self.db.get_cached_page(&url).await {
-            return self.parse_10times_results(&cached, sector, region).await;
-        }
+        let seed_file: SeedFile =
+            toml::from_str(&content).map_err(|e| anyhow::anyhow!("Invalid TOML in {}: {}", seed_path, e))?;
 
-        let html = self.scraper.fetch(&url).await?;
-        let _ = self.db.cache_page(&url, &html, self.scraper.config.cache_ttl_hours).await;
-        self.parse_10times_results(&html, sector, region).await
-    }
-
-    async fn parse_10times_results(&self, html: &str, sector: &str, region: &str) -> Result<usize> {
-        let document = Html::parse_document(html);
         let mut count = 0;
 
-        // 10times event card selectors
-        let event_sel = Selector::parse(".event-card, .event-item, article.event").unwrap_or_else(|_| Selector::parse("article").unwrap());
-        let name_sel = Selector::parse("h2, h3, .event-name, .event-title").unwrap_or_else(|_| Selector::parse("h2").unwrap());
-        let date_sel = Selector::parse(".event-date, .date, time").unwrap_or_else(|_| Selector::parse("time").unwrap());
-        let location_sel = Selector::parse(".event-location, .location, .venue").unwrap_or_else(|_| Selector::parse(".location").unwrap());
-        let link_sel = Selector::parse("a[href]").unwrap();
-
-        for event_el in document.select(&event_sel) {
-            let name = event_el
-                .select(&name_sel)
-                .next()
-                .map(|el| el.text().collect::<String>().trim().to_string())
-                .unwrap_or_default();
-
-            if name.is_empty() {
+        for seed in &seed_file.exhibition {
+            // Check if this sector+region matches our targeting config
+            if !self.targeting.sectors.iter().any(|s| s == &seed.sector) {
+                continue;
+            }
+            if !self.targeting.regions.iter().any(|r| r == &seed.region) {
                 continue;
             }
 
-            let location = event_el
-                .select(&location_sel)
-                .next()
-                .map(|el| el.text().collect::<String>().trim().to_string());
+            // Parse the start date
+            let start_date = seed.start_date.as_deref().and_then(|d| {
+                NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()
+            });
 
-            let website_url = event_el
-                .select(&link_sel)
-                .next()
-                .and_then(|el| el.value().attr("href"))
-                .map(|href| {
-                    if href.starts_with("http") {
-                        href.to_string()
-                    } else {
-                        format!("https://10times.com{}", href)
-                    }
-                });
-
-            let mut exhibition = Exhibition::new(name, sector.to_string(), region.to_string());
-            exhibition.location = location.clone();
-            exhibition.website_url = website_url;
-            exhibition.source_url = Some(format!("https://10times.com/{}/{}", region, sector));
-
-            // Parse date if available
-            if let Some(date_el) = event_el.select(&date_sel).next() {
-                let date_text = date_el.text().collect::<String>();
-                exhibition.start_date = parse_date_fuzzy(&date_text);
-            }
-
-            // Lead-time window filter: only process events 45-90 days away
-            if !self.is_in_lead_window(exhibition.start_date) {
+            // Lead-time window filter
+            if !self.is_in_lead_window(start_date) {
                 continue;
             }
+
+            let mut exhibition = Exhibition::new(
+                seed.name.clone(),
+                seed.sector.clone(),
+                seed.region.clone(),
+            );
+            exhibition.start_date = start_date;
+            exhibition.location = seed.location.clone();
+            exhibition.website_url = seed.website.clone();
+            exhibition.source_url = Some("seed_exhibitions.toml".to_string());
 
             match self.db.upsert_exhibition(&exhibition).await {
-                Ok(_) => count += 1,
-                Err(e) => warn!("  Failed to store exhibition '{}': {}", exhibition.name, e),
+                Ok(_) => {
+                    count += 1;
+                    debug!("    ✓ {} ({}, {})", seed.name, seed.sector, seed.region);
+                }
+                Err(e) => warn!("    Failed to store '{}': {}", seed.name, e),
             }
         }
 
         Ok(count)
-    }
-
-    /// Search Expodatabase.com
-    async fn search_expodatabase(&self, sector: &str, region: &str) -> Result<usize> {
-        let sector_slug = sector.to_lowercase().replace(' ', "-");
-        let url = format!(
-            "https://www.expodatabase.com/trade-shows/{}/",
-            sector_slug
-        );
-
-        if let Ok(Some(cached)) = self.db.get_cached_page(&url).await {
-            return self.parse_expodatabase_results(&cached, sector, region).await;
-        }
-
-        let html = self.scraper.fetch(&url).await?;
-        let _ = self.db.cache_page(&url, &html, self.scraper.config.cache_ttl_hours).await;
-        self.parse_expodatabase_results(&html, sector, region).await
-    }
-
-    async fn parse_expodatabase_results(&self, html: &str, sector: &str, region: &str) -> Result<usize> {
-        let document = Html::parse_document(html);
-        let mut count = 0;
-
-        let row_sel = Selector::parse("tr.event-row, .trade-show-item, .event-listing").unwrap_or_else(|_| Selector::parse("tr").unwrap());
-        let name_sel = Selector::parse("td.name a, .show-name, h3 a").unwrap_or_else(|_| Selector::parse("a").unwrap());
-
-        for row in document.select(&row_sel) {
-            let name = row
-                .select(&name_sel)
-                .next()
-                .map(|el| el.text().collect::<String>().trim().to_string())
-                .unwrap_or_default();
-
-            if name.is_empty() || name.len() < 3 {
-                continue;
-            }
-
-            // Filter by region keyword
-            let row_text = row.text().collect::<String>().to_lowercase();
-            let region_keywords = self.region_keywords(region);
-            if !region_keywords.iter().any(|kw| row_text.contains(kw)) {
-                continue;
-            }
-
-            let mut exhibition = Exhibition::new(name, sector.to_string(), region.to_string());
-            exhibition.source_url = Some(format!("https://www.expodatabase.com/trade-shows/{}/", sector.to_lowercase()));
-
-            match self.db.upsert_exhibition(&exhibition).await {
-                Ok(_) => count += 1,
-                Err(e) => warn!("  Failed to store exhibition: {}", e),
-            }
-        }
-
-        Ok(count)
-    }
-
-    fn sector_to_10times_slug(&self, sector: &str) -> &'static str {
-        match sector {
-            "Tech" => "technology",
-            "Medical" => "medical",
-            "Pharma" => "pharmaceutical",
-            "Auto" => "automotive",
-            _ => "business",
-        }
-    }
-
-    fn region_to_10times_slug(&self, region: &str) -> &'static str {
-        match region {
-            "Middle East" => "middle-east",
-            "Europe" => "europe",
-            "Asia Pacific" => "asia",
-            "UK" => "united-kingdom",
-            _ => "world",
-        }
     }
 
     /// Check if an event's start date falls within the lead-time window.
@@ -218,59 +136,19 @@ impl ExhibitionFinder {
         let days_until = (date - today).num_days();
 
         if days_until < self.targeting.lead_time_min_days {
-            debug!("    ⏭ Event on {} — only {} days away (min {}), too late",
-                date, days_until, self.targeting.lead_time_min_days);
+            debug!(
+                "    ⏭ {} — {} days away (min {}), too late",
+                date, days_until, self.targeting.lead_time_min_days
+            );
             return false;
         }
         if days_until > self.targeting.lead_time_max_days {
-            debug!("    ⏭ Event on {} — {} days away (max {}), too far out",
-                date, days_until, self.targeting.lead_time_max_days);
+            debug!(
+                "    ⏭ {} — {} days away (max {}), too far out",
+                date, days_until, self.targeting.lead_time_max_days
+            );
             return false;
         }
         true
     }
-
-    fn region_keywords(&self, region: &str) -> Vec<&'static str> {
-        match region {
-            "Middle East" => vec!["dubai", "abu dhabi", "riyadh", "doha", "kuwait", "middle east", "uae", "saudi"],
-            "Europe" => vec!["germany", "france", "uk", "netherlands", "spain", "italy", "europe", "berlin", "paris", "amsterdam"],
-            "Asia Pacific" => vec!["singapore", "hong kong", "tokyo", "shanghai", "sydney", "asia", "pacific", "china", "japan"],
-            "UK" => vec!["london", "manchester", "birmingham", "uk", "united kingdom", "england"],
-            _ => vec![],
-        }
-    }
-}
-
-/// Fuzzy date parser for exhibition dates
-fn parse_date_fuzzy(text: &str) -> Option<chrono::NaiveDate> {
-    use chrono::NaiveDate;
-
-    // Try common formats
-    let text = text.trim();
-    let formats = [
-        "%B %d, %Y",
-        "%d %B %Y",
-        "%Y-%m-%d",
-        "%d/%m/%Y",
-        "%m/%d/%Y",
-        "%b %d, %Y",
-        "%d %b %Y",
-    ];
-
-    for fmt in &formats {
-        if let Ok(date) = NaiveDate::parse_from_str(text, fmt) {
-            return Some(date);
-        }
-    }
-
-    // Try to extract year-month-day from longer strings
-    let re = regex::Regex::new(r"(\d{4})-(\d{2})-(\d{2})").ok()?;
-    if let Some(caps) = re.captures(text) {
-        let y: i32 = caps[1].parse().ok()?;
-        let m: u32 = caps[2].parse().ok()?;
-        let d: u32 = caps[3].parse().ok()?;
-        return NaiveDate::from_ymd_opt(y, m, d);
-    }
-
-    None
 }

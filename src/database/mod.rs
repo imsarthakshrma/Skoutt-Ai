@@ -793,10 +793,12 @@ impl Database {
                 researched_at: naive_to_utc(r.researched_at),
                 company_website_summary: r.company_website_summary,
                 recent_news: r.recent_news
-                    .and_then(|s| serde_json::from_str::<Vec<NewsArticle>>(&s).ok())
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<Vec<NewsArticle>>(s).ok())
                     .unwrap_or_default(),
                 previous_exhibitions: r.previous_exhibitions
-                    .and_then(|s| serde_json::from_str::<Vec<PreviousExhibition>>(&s).ok())
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<Vec<PreviousExhibition>>(s).ok())
                     .unwrap_or_default(),
                 company_overview: r.company_overview,
                 exhibition_strategy: r.exhibition_strategy,
@@ -844,10 +846,12 @@ impl Database {
                 researched_at: naive_to_utc(r.researched_at),
                 company_website_summary: r.company_website_summary,
                 recent_news: r.recent_news
-                    .and_then(|s| serde_json::from_str::<Vec<NewsArticle>>(&s).ok())
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<Vec<NewsArticle>>(s).ok())
                     .unwrap_or_default(),
                 previous_exhibitions: r.previous_exhibitions
-                    .and_then(|s| serde_json::from_str::<Vec<PreviousExhibition>>(&s).ok())
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<Vec<PreviousExhibition>>(s).ok())
                     .unwrap_or_default(),
                 company_overview: r.company_overview,
                 exhibition_strategy: r.exhibition_strategy,
@@ -892,6 +896,73 @@ impl Database {
                 )
             })
             .collect())
+    }
+
+    /// Get all discovered exhibitions (for exhibitor extraction phase)
+    pub async fn get_all_exhibitions(&self) -> Result<Vec<Exhibition>> {
+        let rows = sqlx::query!(
+            r#"
+            SELECT id, name, sector, region, start_date, end_date,
+                   location, city, country, organizer_name, organizer_contact,
+                   website_url, exhibitor_list_url, source_url, discovered_at
+            FROM exhibitions
+            ORDER BY start_date ASC
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| Exhibition {
+                id: r.id.unwrap_or_default(),
+                name: r.name,
+                sector: r.sector,
+                region: r.region,
+                start_date: r.start_date,
+                end_date: r.end_date,
+                location: r.location,
+                city: r.city,
+                country: r.country,
+                organizer_name: r.organizer_name,
+                organizer_contact: r.organizer_contact,
+                website_url: r.website_url,
+                exhibitor_list_url: r.exhibitor_list_url,
+                source_url: r.source_url,
+                discovered_at: naive_to_utc(r.discovered_at),
+            })
+            .collect())
+    }
+
+    /// Store an organizer request (logged in scrape_cache as a special entry)
+    pub async fn store_organizer_request(
+        &self,
+        exhibition_id: &str,
+        email: &str,
+        name: &str,
+        message: &str,
+    ) -> Result<()> {
+        let url = format!("organizer_request:{}", exhibition_id);
+        let content = serde_json::json!({
+            "email": email,
+            "name": name,
+            "message": message,
+            "exhibition_id": exhibition_id,
+            "requested_at": chrono::Utc::now().to_rfc3339(),
+        }).to_string();
+
+        sqlx::query!(
+            r#"
+            INSERT OR REPLACE INTO scrape_cache (url, content, scraped_at, expires_at)
+            VALUES (?, ?, datetime('now'), datetime('now', '+30 days'))
+            "#,
+            url,
+            content,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 }
 

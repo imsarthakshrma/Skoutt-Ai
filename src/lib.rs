@@ -46,6 +46,15 @@ pub struct ResearchConfig {
     pub cache_duration_days: i64,
     pub sources: ResearchSourcesConfig,
     pub limits: ResearchLimitsConfig,
+    /// Use Crawl4AI for JS-rendered scraping (falls back to reqwest if false)
+    #[serde(default = "default_true")]
+    pub crawl4ai_enabled: bool,
+    /// Use agentic tool-calling research (Claude decides what to research)
+    #[serde(default)]
+    pub use_agentic: bool,
+    /// Max tool-use rounds for agentic researcher
+    #[serde(default = "default_max_rounds")]
+    pub max_tool_rounds: usize,
 }
 
 impl Default for ResearchConfig {
@@ -56,9 +65,15 @@ impl Default for ResearchConfig {
             cache_duration_days: 30,
             sources: ResearchSourcesConfig::default(),
             limits: ResearchLimitsConfig::default(),
+            crawl4ai_enabled: true,
+            use_agentic: false,
+            max_tool_rounds: 5,
         }
     }
 }
+
+fn default_true() -> bool { true }
+fn default_max_rounds() -> usize { 5 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ResearchSourcesConfig {

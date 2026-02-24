@@ -6,6 +6,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing::{error, info, warn};
+use csv;
 
 use skoutt::{
     database::Database,
@@ -20,7 +21,10 @@ use skoutt::{
         email_drafter::EmailDrafter, email_sender::EmailSender,
         followup_scheduler::FollowupScheduler, reply_monitor::ReplyMonitor,
     },
-    scraping::exhibition_finder::ExhibitionFinder,
+    scraping::{
+        exhibition_finder::ExhibitionFinder,
+        exhibitor_extractor::ExhibitorExtractor,
+    },
     survival::{
         alert_system::AlertSystem, metrics_tracker::MetricsTracker,
         shutdown_manager::ShutdownManager,
@@ -104,6 +108,16 @@ enum Commands {
         /// Contact ID to look up research for
         contact_id: String,
     },
+
+    /// Start an interactive chat session with Scott
+    Chat,
+
+    /// Export leads to a CSV file
+    Export {
+        /// Output file path (default: data/leads.csv)
+        #[arg(short, long, default_value = "data/leads.csv")]
+        output: String,
+    },
 }
 
 
@@ -141,6 +155,44 @@ async fn main() -> Result<()> {
             run_daily_cycle(&ctx).await?;
         }
 
+        Commands::Status => {
+            let db = Database::new(&config.database.path).await?;
+            let status = skoutt::survival::shutdown_manager::ShutdownManager::new(
+                config.survival.clone(),
+                db.clone(),
+                AlertSystem::new(config.email.clone(), config.alerts.clone(), true),
+            ).run_survival_check().await?;
+            
+            println!("\n{}", "━".repeat(60));
+            println!("  SKOUTT SURVIVAL STATUS");
+            println!("{}", "━".repeat(60));
+            println!("  Status:           {:?}", status.status);
+            println!("  Weeks Active:     {}", status.weeks_active);
+            println!("  Interested/Week:  {}", status.interested_this_week);
+            println!("  Zero-Reply Weeks: {}", status.consecutive_zero_weeks);
+            println!("{}", "━".repeat(60));
+        }
+
+        Commands::Stats => {
+            let db = Database::new(&config.database.path).await?;
+            print_database_stats(&db).await?;
+        }
+
+        Commands::Chat => {
+            let ctx = build_context(&config, true).await?;
+            let mut session = skoutt::intelligence::chat::ChatSession::new(
+                config.apis.claude_api_key.clone(),
+                config.apis.claude_model.clone(),
+                ctx.db.clone(),
+            );
+            session.start().await?;
+        }
+
+        Commands::Export { output } => {
+            let ctx = build_context(&config, true).await?;
+            export_leads_csv(&ctx, &output).await?;
+        }
+
         Commands::Daemon { dry_run, hour } => {
             print_banner(dry_run);
             let ctx = build_context(&config, dry_run).await?;
@@ -174,32 +226,6 @@ async fn main() -> Result<()> {
                     std::process::exit(0);
                 }
             }
-        }
-
-        Commands::Status => {
-            let db = Database::new(&config.database.path).await?;
-            let alert = AlertSystem::new(config.email.clone(), config.alerts.clone(), false);
-            let shutdown = ShutdownManager::new(config.survival.clone(), db.clone(), alert);
-            let metrics = MetricsTracker::new(db.clone());
-
-            let report = shutdown.check_status().await?;
-            let summary = metrics.get_summary().await?;
-
-            println!("\n{}", "━".repeat(60));
-            println!("  SKOUTT STATUS");
-            println!("{}", "━".repeat(60));
-            println!("  Status:           {:?}", report.status);
-            println!("  Weeks active:     {}", report.weeks_active);
-            println!("  Zero-reply weeks: {}", report.consecutive_zero_weeks);
-            println!("  Interested/week:  {}", report.interested_this_week);
-            println!("  Total sent:       {}", report.total_emails_sent);
-            println!("{}", "━".repeat(60));
-            println!("\n{}", summary);
-        }
-
-        Commands::Stats => {
-            let db = Database::new(&config.database.path).await?;
-            print_database_stats(&db).await?;
         }
 
         Commands::CheckReplies { dry_run } => {
@@ -355,6 +381,7 @@ async fn main() -> Result<()> {
 struct AppContext {
     db: Database,
     exhibition_finder: ExhibitionFinder,
+    exhibitor_extractor: ExhibitorExtractor,
     apollo: ApolloClient,
     hunter: HunterClient,
     researcher: CompanyResearcher,
@@ -375,6 +402,12 @@ async fn build_context(config: &skoutt::AppConfig, dry_run: bool) -> Result<AppC
 
     Ok(AppContext {
         exhibition_finder: ExhibitionFinder::new(config.scraping.clone(), config.targeting.clone(), db.clone()),
+        exhibitor_extractor: ExhibitorExtractor::new(
+            config.research.clone(),
+            config.apis.claude_api_key.clone(),
+            config.apis.claude_model.clone(),
+            db.clone(),
+        ),
         apollo: ApolloClient::new(config.apis.apollo_api_key.clone()),
         hunter: HunterClient::new(config.apis.hunter_api_key.clone()),
         researcher: CompanyResearcher::new(config.apis.claude_api_key.clone(), config.apis.claude_model.clone()),
@@ -425,6 +458,18 @@ async fn run_daily_cycle(ctx: &AppContext) -> Result<()> {
         Ok(n) => info!("    {} new exhibitions found", n),
         Err(e) => warn!("    Discovery errors: {e}"),
     }
+
+    // Phase 1b: Agentic Exhibitor Extraction
+    info!("🕵️   Phase 1b: Agentic Exhibitor Extraction");
+    let exhibitions = ctx.db.get_all_exhibitions().await?;
+    let mut total_companies = 0;
+    for exhibition in &exhibitions {
+        match ctx.exhibitor_extractor.extract_exhibitors(exhibition).await {
+            Ok(count) => total_companies += count,
+            Err(e) => warn!("    Extraction failed for {}: {e}", exhibition.name),
+        }
+    }
+    info!("    {} companies extracted from {} exhibitions", total_companies, exhibitions.len());
 
     // Phase 2: Enrichment
     info!("🔍  Phase 2: Lead Enrichment");
@@ -615,6 +660,51 @@ fn print_banner(dry_run: bool) {
         println!("  ⚠️   DRY RUN MODE — no emails will be sent");
     }
     println!();
+}
+
+async fn export_leads_csv(ctx: &AppContext, path: &str) -> Result<()> {
+    info!("📊  Exporting leads to {}...", path);
+    
+    let leads = sqlx::query!(
+        r#"
+        SELECT 
+            c.name as company_name,
+            c.website as "website?",
+            co.full_name as contact_name,
+            co.email as "contact_email?",
+            co.job_title as "job_title?",
+            rr.email_angle as "email_angle?",
+            rr.exhibition_strategy as "strategy?",
+            rr.company_overview as "overview?"
+        FROM contacts co
+        JOIN companies c ON co.company_id = c.id
+        LEFT JOIN research_reports rr ON co.id = rr.contact_id
+        WHERE co.email IS NOT NULL 
+          AND co.do_not_contact = 0
+        ORDER BY c.name ASC
+        "#
+    )
+    .fetch_all(&ctx.db.pool)
+    .await?;
+
+    let mut wtr = csv::Writer::from_path(path)?;
+    wtr.write_record(&["Company", "Website", "Contact Name", "Contact Email", "Job Title", "Strategy", "Research Summary"])?;
+
+    for lead in &leads {
+        wtr.write_record(&[
+            &lead.company_name,
+            lead.website.as_deref().unwrap_or_default(),
+            &lead.contact_name,
+            lead.contact_email.as_deref().unwrap_or_default(),
+            lead.job_title.as_deref().unwrap_or_default(),
+            lead.strategy.as_deref().unwrap_or_default(),
+            lead.overview.as_deref().unwrap_or_default(),
+        ])?;
+    }
+
+    wtr.flush()?;
+    info!("✅  Successfully exported {} leads", leads.len());
+    Ok(())
 }
 
 async fn print_database_stats(db: &Database) -> Result<()> {

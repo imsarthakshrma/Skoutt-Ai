@@ -1,0 +1,196 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Skoutt — Seed Exhibitions
+# 
+# Manually curated list of exhibitions that TrackExhibits targets.
+# These are loaded directly into the pipeline — no web scraping needed.
+#
+# Add new exhibitions as [[exhibition]] entries.
+# Format: name, sector, region, location, website, start_date (YYYY-MM-DD)
+#
+# The exhibitor_url is the page listing exhibitors for that event.
+# Skoutt will scrape this page to find companies to contact.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# ── Middle East ────────────────────────────────────────────────────────────
+
+[[exhibition]]
+name = "Middle East Electricity (MEE)"
+sector = "Tech"
+region = "Middle East"
+location = "Dubai, UAE"
+website = "https://10times.com/middle-east-electricity"
+start_date = "2026-05-13"
+
+[[exhibition]]
+name = "Arab Health"
+sector = "Medical"
+region = "Middle East"
+location = "Dubai, UAE"
+website = "https://www.arabhealthonline.com"
+start_date = "2026-01-27"
+
+[[exhibition]]
+name = "GITEX Global"
+sector = "Tech"
+region = "Middle East"
+location = "Dubai, UAE"
+website = "https://www.gitex.com"
+start_date = "2026-10-13"
+
+[[exhibition]]
+name = "Automechanika Dubai"
+sector = "Auto"
+region = "Middle East"
+location = "Dubai, UAE"
+website = "https://automechanikadubai.com"
+start_date = "2026-06-07"
+
+[[exhibition]]
+name = "CPHI Middle East & Africa"
+sector = "Pharma"
+region = "Middle East"
+location = "Abu Dhabi, UAE"
+website = "https://www.cphi.com/middle-east-africa"
+start_date = "2026-09-08"
+
+[[exhibition]]
+name = "The Big 5 Dubai"
+sector = "Tech"
+region = "Middle East"
+location = "Dubai, UAE"
+website = "https://www.thebig5.ae"
+start_date = "2026-11-25"
+
+[[exhibition]]
+name = "Dubai International Motor Show"
+sector = "Auto"
+region = "Middle East"
+location = "Dubai, UAE"
+website = "https://dubaimotorshow.com"
+start_date = "2026-11-18"
+
+[[exhibition]]
+name = "Saudi Food Expo"
+sector = "Tech"
+region = "Middle East"
+location = "Riyadh, Saudi Arabia"
+website = "https://saudifoodexpo.com"
+start_date = "2026-04-14"
+
+# ── Europe ─────────────────────────────────────────────────────────────────
+
+[[exhibition]]
+name = "Medica"
+sector = "Medical"
+region = "Europe"
+location = "Düsseldorf, Germany"
+website = "https://www.medica-tradefair.com"
+start_date = "2026-11-16"
+
+[[exhibition]]
+name = "CPhI Worldwide"
+sector = "Pharma"
+region = "Europe"
+location = "Milan, Italy"
+website = "https://www.cphi.com/europe"
+start_date = "2026-10-13"
+
+[[exhibition]]
+name = "IAA Mobility"
+sector = "Auto"
+region = "Europe"
+location = "Munich, Germany"
+website = "https://www.iaa-mobility.com"
+start_date = "2026-09-07"
+
+[[exhibition]]
+name = "Mobile World Congress (MWC)"
+sector = "Tech"
+region = "Europe"
+location = "Barcelona, Spain"
+website = "https://www.mwcbarcelona.com"
+start_date = "2026-03-02"
+
+[[exhibition]]
+name = "Hannover Messe"
+sector = "Tech"
+region = "Europe"
+location = "Hannover, Germany"
+website = "https://www.hannovermesse.de"
+start_date = "2026-04-20"
+
+# ── Asia Pacific ───────────────────────────────────────────────────────────
+
+[[exhibition]]
+name = "CommunicAsia"
+sector = "Tech"
+region = "Asia Pacific"
+location = "Singapore"
+website = "https://www.communicasia.com"
+start_date = "2026-06-02"
+
+[[exhibition]]
+name = "Medical Fair Asia"
+sector = "Medical"
+region = "Asia Pacific"
+location = "Singapore"
+website = "https://www.medicalfair-asia.com"
+start_date = "2026-08-25"
+
+[[exhibition]]
+name = "CPhI South East Asia"
+sector = "Pharma"
+region = "Asia Pacific"
+location = "Bangkok, Thailand"
+website = "https://www.cphi.com/sea"
+start_date = "2026-07-14"
+
+[[exhibition]]
+name = "Tokyo Motor Show"
+sector = "Auto"
+region = "Asia Pacific"
+location = "Tokyo, Japan"
+website = "https://www.japan-mobility-show.com"
+start_date = "2026-10-27"
+
+# ── UK ─────────────────────────────────────────────────────────────────────
+
+[[exhibition]]
+name = "ExCeL London Tech Week"
+sector = "Tech"
+region = "UK"
+location = "London, UK"
+website = "https://londontechweek.com"
+start_date = "2026-06-08"
+
+[[exhibition]]
+name = "BETT Show"
+sector = "Tech"
+region = "UK"
+location = "London, UK"
+website = "https://www.bettshow.com"
+start_date = "2026-01-21"
+
+[[exhibition]]
+name = "The Pharmacy Show"
+sector = "Pharma"
+region = "UK"
+location = "Birmingham, UK"
+website = "https://www.thepharmacyshow.co.uk"
+start_date = "2026-10-11"
+
+[[exhibition]]
+name = "Medical Technology UK"
+sector = "Medical"
+region = "UK"
+location = "Birmingham, UK"
+website = "https://www.medicaltechnologyuk.com"
+start_date = "2026-09-23"
+
+[[exhibition]]
+name = "Automechanika Birmingham"
+sector = "Auto"
+region = "UK"
+location = "Birmingham, UK"
+website = "https://automechanika-birmingham.com"
+start_date = "2026-06-03"

@@ -228,8 +228,21 @@ The binary will be at `./target/release/skoutt`.
 ./target/release/skoutt check-replies --dry-run
 ```
 
-### Full CLI reference
+### Start an interactive chat session with Scott
+```bash
+./target/release/skoutt chat
+```
 
+### Export leads to CSV
+```bash
+# Default path (data/leads.csv)
+./target/release/skoutt export
+
+# Custom path
+./target/release/skoutt export --output my_leads.csv
+```
+
+### Full CLI reference
 ```bash
 ./target/release/skoutt --help
 ./target/release/skoutt daemon --help
