@@ -143,6 +143,57 @@ pub async fn search_news_via_crawl4ai(
     }
 }
 
+// ── Fetch HTML (raw HTML for sites behind Cloudflare/JS) ─────────────────
+
+#[derive(Debug, Serialize)]
+struct FetchHtmlRequest {
+    mode: String,
+    url: String,
+    timeout: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct FetchHtmlResponse {
+    html: Option<String>,
+    success: bool,
+    error: Option<String>,
+}
+
+/// Fetch raw rendered HTML from a URL using Crawl4AI (headless browser).
+/// Used as fallback when reqwest gets 403 from Cloudflare-protected sites.
+pub async fn fetch_html_via_crawl4ai(url: &str) -> Result<String> {
+    let request = FetchHtmlRequest {
+        mode: "fetch_html".into(),
+        url: url.to_string(),
+        timeout: 30,
+    };
+
+    let input = serde_json::to_string(&request)?;
+
+    match run_crawler_subprocess(&input, Duration::from_secs(60)).await {
+        Ok(output) => {
+            let resp: FetchHtmlResponse = serde_json::from_str(&output)
+                .map_err(|e| {
+                    warn!("  Crawl4AI fetch_html parse error: {e}");
+                    anyhow::anyhow!("Parse error: {e}")
+                })?;
+
+            if let Some(err) = resp.error {
+                warn!("  Crawl4AI fetch_html error: {err}");
+                return Err(anyhow::anyhow!("Crawl4AI: {err}"));
+            }
+
+            resp.html
+                .filter(|h| !h.is_empty())
+                .ok_or_else(|| anyhow::anyhow!("Crawl4AI returned empty HTML"))
+        }
+        Err(e) => {
+            warn!("  Crawl4AI fetch_html subprocess failed: {e}");
+            Err(e)
+        }
+    }
+}
+
 // ── Internal ──────────────────────────────────────────────────────────────
 
 async fn run_crawler_subprocess(input_json: &str, timeout: Duration) -> Result<String> {

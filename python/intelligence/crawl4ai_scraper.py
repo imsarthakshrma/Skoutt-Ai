@@ -108,6 +108,40 @@ async def scrape_urls(urls: list[str], max_chars: int = 3000, timeout: int = 30)
     return results
 
 
+async def fetch_html(url: str, timeout: int = 30) -> dict:
+    """Fetch a single URL and return raw HTML (not markdown).
+    
+    Useful for pages behind Cloudflare/JS challenges where reqwest gets 403.
+    The rendered HTML can be parsed with HTML selectors.
+    """
+    try:
+        from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+    except ImportError:
+        return {"url": url, "html": "", "success": False, "error": "crawl4ai not installed"}
+
+    browser_config = BrowserConfig(headless=True)
+    crawler_config = CrawlerRunConfig(verbose=False)
+
+    try:
+        async with AsyncWebCrawler(config=browser_config) as crawler:
+            result = await asyncio.wait_for(
+                crawler.arun(url=url, config=crawler_config),
+                timeout=timeout,
+            )
+            if result.success:
+                html = result.cleaned_html or result.html or ""
+                return {"url": url, "html": html, "success": True}
+            else:
+                return {"url": url, "html": "", "success": False,
+                        "error": f"Crawl failed: {getattr(result, 'error_message', 'unknown')}"}
+    except asyncio.TimeoutError:
+        return {"url": url, "html": "", "success": False, "error": f"Timeout after {timeout}s"}
+    except Exception as e:
+        return {"url": url, "html": "", "success": False, "error": f"Browser error: {e}"}
+
+
+
+
 async def search_news_via_crawl4ai(
     company_name: str,
     max_articles: int = 5,
@@ -301,6 +335,13 @@ async def main():
             max_articles=max_articles,
         )
         print(json.dumps({"articles": articles}), file=sys.stdout)
+
+    elif mode == "fetch_html":
+        url = request.get("url", "")
+        timeout = request.get("timeout", 30)
+        
+        result = await fetch_html(url, timeout=timeout)
+        print(json.dumps(result), file=sys.stdout)
     
     else:
         print(json.dumps({"error": f"Unknown mode: {mode}"}), file=sys.stdout)
